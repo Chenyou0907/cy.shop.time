@@ -78,7 +78,7 @@ export default function DashboardClient({ email }: Props) {
   };
 
   const hoursOptions = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, "0"));
-  const minutesOptions = ["00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55"];
+  const minutesOptions = Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, "0"));
   const startHour = startTime.split(":")[0] ?? "";
   const startMinute = startTime.split(":")[1] ?? "";
   const endHour = endTime.split(":")[0] ?? "";
