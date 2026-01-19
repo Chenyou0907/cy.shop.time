@@ -47,8 +47,8 @@ export default function DashboardClient({ email }: Props) {
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [view, setView] = useState<"timesheet" | "payroll">("timesheet");
   const [paySettings, setPaySettings] = useState<PaySettings>({
-    cyclesPerMonth: 1,
-    paydays: [5]
+    cyclesPerMonth: 2,
+    paydays: [20, 5]
   });
   const [selectedMonth, setSelectedMonth] = useState<string>("");
   const supabase = useMemo(() => createSupabaseClient(), []);
@@ -168,24 +168,32 @@ export default function DashboardClient({ email }: Props) {
     const month = Number(monthStr); // 1-12
     if (!year || !month) return [];
     const lastDayOfMonth = new Date(year, month, 0).getDate();
-    const days = paySettings.paydays
-      .slice(0, paySettings.cyclesPerMonth)
-      .map((d) => Math.min(Math.max(Math.round(d || 1), 1), lastDayOfMonth))
-      .sort((a, b) => a - b);
-    const ranges: { index: number; startDay: number; endDay: number }[] = [];
-    for (let i = 0; i < days.length; i++) {
-      const startDay = i === 0 ? 1 : days[i - 1] + 1;
-      const endDay = days[i];
-      ranges.push({ index: i, startDay, endDay });
+    const cycles = paySettings.cyclesPerMonth;
+    const ranges: { index: number; startDay: number; endDay: number; payday: number }[] = [];
+    
+    if (cycles === 1) {
+      ranges.push({ index: 0, startDay: 1, endDay: lastDayOfMonth, payday: paySettings.paydays[0] ?? 5 });
+    } else if (cycles === 2) {
+      // 第1次：1-15號，發薪日期是 paydays[0]
+      ranges.push({ index: 0, startDay: 1, endDay: 15, payday: paySettings.paydays[0] ?? 20 });
+      // 第2次：16-月底，發薪日期是 paydays[1]
+      ranges.push({ index: 1, startDay: 16, endDay: lastDayOfMonth, payday: paySettings.paydays[1] ?? 5 });
+    } else if (cycles === 3) {
+      const split1 = Math.floor(lastDayOfMonth / 3);
+      const split2 = Math.floor((lastDayOfMonth * 2) / 3);
+      ranges.push({ index: 0, startDay: 1, endDay: split1, payday: paySettings.paydays[0] ?? 5 });
+      ranges.push({ index: 1, startDay: split1 + 1, endDay: split2, payday: paySettings.paydays[1] ?? 5 });
+      ranges.push({ index: 2, startDay: split2 + 1, endDay: lastDayOfMonth, payday: paySettings.paydays[2] ?? 5 });
+    } else if (cycles === 4) {
+      const split1 = Math.floor(lastDayOfMonth / 4);
+      const split2 = Math.floor((lastDayOfMonth * 2) / 4);
+      const split3 = Math.floor((lastDayOfMonth * 3) / 4);
+      ranges.push({ index: 0, startDay: 1, endDay: split1, payday: paySettings.paydays[0] ?? 5 });
+      ranges.push({ index: 1, startDay: split1 + 1, endDay: split2, payday: paySettings.paydays[1] ?? 5 });
+      ranges.push({ index: 2, startDay: split2 + 1, endDay: split3, payday: paySettings.paydays[2] ?? 5 });
+      ranges.push({ index: 3, startDay: split3 + 1, endDay: lastDayOfMonth, payday: paySettings.paydays[3] ?? 5 });
     }
-    if (ranges.length === 0) {
-      ranges.push({ index: 0, startDay: 1, endDay: lastDayOfMonth });
-    } else {
-      const last = ranges[ranges.length - 1];
-      if (last.endDay < lastDayOfMonth) {
-        ranges[ranges.length - 1] = { ...last, endDay: lastDayOfMonth };
-      }
-    }
+    
     return ranges;
   }, [paySettings, selectedMonth]);
 
@@ -585,10 +593,14 @@ export default function DashboardClient({ email }: Props) {
                   value={paySettings.cyclesPerMonth}
                   onChange={(e) => {
                     const cycles = Math.min(Math.max(Number(e.target.value) || 1, 1), 4);
-                    setPaySettings((prev) => ({
-                      cyclesPerMonth: cycles,
-                      paydays: prev.paydays.slice(0, cycles).concat(Array(Math.max(cycles - prev.paydays.length, 0)).fill(5))
-                    }));
+                    setPaySettings((prev) => {
+                      const defaults = cycles === 2 ? [20, 5] : Array(cycles).fill(5);
+                      const existing = prev.paydays.slice(0, cycles);
+                      return {
+                        cyclesPerMonth: cycles,
+                        paydays: existing.length === cycles ? existing : defaults.slice(0, cycles)
+                      };
+                    });
                   }}
                 >
                   {[1, 2, 3, 4].map((n) => (
@@ -630,9 +642,8 @@ export default function DashboardClient({ email }: Props) {
               {selectedMonth &&
                 payCyclesForMonth.map((c) => (
                   <p key={c.index}>
-                    第 {c.index + 1} 次：
-                    {selectedMonth.slice(5)}/{c.startDay.toString().padStart(2, "0")} ~{" "}
-                    {selectedMonth.slice(5)}/{c.endDay.toString().padStart(2, "0")}
+                    第 {c.index + 1} 次：{selectedMonth.slice(5)}/{c.startDay.toString().padStart(2, "0")} ~{" "}
+                    {selectedMonth.slice(5)}/{c.endDay.toString().padStart(2, "0")}，{c.payday}號發薪
                   </p>
                 ))}
             </div>
