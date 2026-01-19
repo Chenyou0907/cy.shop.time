@@ -14,7 +14,8 @@ export default function ForgotPasswordPage() {
     event.preventDefault();
     setError(null);
     setMessage(null);
-    const formData = new FormData(event.currentTarget);
+    const formEl = event.currentTarget; // capture before await to avoid pooled event surprises
+    const formData = new FormData(formEl);
     const payload = { email: String(formData.get("email") ?? "") };
 
     const parsed = schema.safeParse(payload);
@@ -33,7 +34,7 @@ export default function ForgotPasswordPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "寄送失敗");
       setMessage("已寄出重設連結，請至 Email 查看。");
-      event.currentTarget.reset();
+      formEl.reset();
     } catch (err) {
       setError(err instanceof Error ? err.message : "寄送失敗，請稍後再試");
     } finally {
