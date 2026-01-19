@@ -77,12 +77,12 @@ export default function DashboardClient({ email }: Props) {
     window.location.href = "/login";
   };
 
-  const normalizeTime = (value: string) => {
-    const v = value.trim();
-    // Accept "HH:mm" only (24h). Keep raw text while typing.
-    const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(v);
-    return match ? `${match[1]}:${match[2]}` : v;
-  };
+  const hoursOptions = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, "0"));
+  const minutesOptions = ["00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55"];
+  const startHour = startTime.split(":")[0] ?? "";
+  const startMinute = startTime.split(":")[1] ?? "";
+  const endHour = endTime.split(":")[0] ?? "";
+  const endMinute = endTime.split(":")[1] ?? "";
 
   const handleAdd = () => {
     setError(null);
@@ -212,29 +212,61 @@ export default function DashboardClient({ email }: Props) {
               className="app-input mt-1"
             />
           </label>
-          <label className="app-label">上班時間（24 小時制）
-            <input
-              type="text"
-              inputMode="numeric"
-              value={startTime}
-              onChange={(e) => setStartTime(e.target.value)}
-              onBlur={(e) => setStartTime(normalizeTime(e.target.value))}
-              className="app-input mt-1"
-              placeholder="例如 09:00"
-              pattern="^([01]\d|2[0-3]):[0-5]\d$"
-            />
+          <label className="app-label">上班時間
+            <div className="mt-1 flex gap-2">
+              <select
+                className="app-input"
+                value={startHour}
+                onChange={(e) => setStartTime(`${e.target.value}:${startMinute || "00"}`)}
+              >
+                <option value="">時</option>
+                {hoursOptions.map((h) => (
+                  <option key={h} value={h}>
+                    {h}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="app-input"
+                value={startMinute}
+                onChange={(e) => setStartTime(`${startHour || "00"}:${e.target.value}`)}
+              >
+                <option value="">分</option>
+                {minutesOptions.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </div>
           </label>
-          <label className="app-label">下班時間（24 小時制）
-            <input
-              type="text"
-              inputMode="numeric"
-              value={endTime}
-              onChange={(e) => setEndTime(e.target.value)}
-              onBlur={(e) => setEndTime(normalizeTime(e.target.value))}
-              className="app-input mt-1"
-              placeholder="例如 18:00"
-              pattern="^([01]\d|2[0-3]):[0-5]\d$"
-            />
+          <label className="app-label">下班時間
+            <div className="mt-1 flex gap-2">
+              <select
+                className="app-input"
+                value={endHour}
+                onChange={(e) => setEndTime(`${e.target.value}:${endMinute || "00"}`)}
+              >
+                <option value="">時</option>
+                {hoursOptions.map((h) => (
+                  <option key={h} value={h}>
+                    {h}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="app-input"
+                value={endMinute}
+                onChange={(e) => setEndTime(`${endHour || "00"}:${e.target.value}`)}
+              >
+                <option value="">分</option>
+                {minutesOptions.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </div>
           </label>
           <label className="app-label">休息時間 (分鐘)
             <input
