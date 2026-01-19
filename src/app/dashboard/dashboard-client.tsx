@@ -77,10 +77,21 @@ export default function DashboardClient({ email }: Props) {
     window.location.href = "/login";
   };
 
+  const normalizeTime = (value: string) => {
+    const v = value.trim();
+    // Accept "HH:mm" only (24h). Keep raw text while typing.
+    const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(v);
+    return match ? `${match[1]}:${match[2]}` : v;
+  };
+
   const handleAdd = () => {
     setError(null);
     if (!date || !startTime || !endTime) {
       setError("請填寫日期與時間");
+      return;
+    }
+    if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(startTime) || !/^([01]\d|2[0-3]):([0-5]\d)$/.test(endTime)) {
+      setError("時間格式請使用 24 小時制 HH:mm（例如 09:30、17:00）");
       return;
     }
     const hours = calcHours(startTime, endTime, breakMinutes);
@@ -201,20 +212,28 @@ export default function DashboardClient({ email }: Props) {
               className="app-input mt-1"
             />
           </label>
-          <label className="app-label">上班時間
+          <label className="app-label">上班時間（24 小時制）
             <input
-              type="time"
+              type="text"
+              inputMode="numeric"
               value={startTime}
               onChange={(e) => setStartTime(e.target.value)}
+              onBlur={(e) => setStartTime(normalizeTime(e.target.value))}
               className="app-input mt-1"
+              placeholder="例如 09:00"
+              pattern="^([01]\d|2[0-3]):[0-5]\d$"
             />
           </label>
-          <label className="app-label">下班時間
+          <label className="app-label">下班時間（24 小時制）
             <input
-              type="time"
+              type="text"
+              inputMode="numeric"
               value={endTime}
               onChange={(e) => setEndTime(e.target.value)}
+              onBlur={(e) => setEndTime(normalizeTime(e.target.value))}
               className="app-input mt-1"
+              placeholder="例如 18:00"
+              pattern="^([01]\d|2[0-3]):[0-5]\d$"
             />
           </label>
           <label className="app-label">休息時間 (分鐘)
