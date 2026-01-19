@@ -20,6 +20,7 @@ interface OvertimeSettings {
 }
 
 const SETTINGS_KEY_PREFIX = "overtime-settings-";
+const ROWS_KEY_PREFIX = "timesheet-rows-";
 
 export default function DashboardClient({ email }: Props) {
   const [date, setDate] = useState("");
@@ -54,6 +55,20 @@ export default function DashboardClient({ email }: Props) {
   }, [email]);
 
   useEffect(() => {
+    if (!email) return;
+    const key = ROWS_KEY_PREFIX + email;
+    const cached = localStorage.getItem(key);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached) as TimesheetRow[];
+        if (Array.isArray(parsed)) setRows(parsed);
+      } catch (e) {
+        console.error("讀取工時資料失敗", e);
+      }
+    }
+  }, [email]);
+
+  useEffect(() => {
     const fetchProfile = async () => {
       const { data } = await supabase.auth.getUser();
       const meta = data.user?.user_metadata?.overtimeSettings as Partial<OvertimeSettings> | undefined;
@@ -69,6 +84,12 @@ export default function DashboardClient({ email }: Props) {
     const key = SETTINGS_KEY_PREFIX + email;
     localStorage.setItem(key, JSON.stringify(settings));
   }, [email, settings]);
+
+  useEffect(() => {
+    if (!email) return;
+    const key = ROWS_KEY_PREFIX + email;
+    localStorage.setItem(key, JSON.stringify(rows));
+  }, [email, rows]);
 
   const totalPay = useMemo(() => rows.reduce((sum, r) => sum + r.totalPay, 0), [rows]);
 
