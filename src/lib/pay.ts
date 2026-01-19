@@ -15,7 +15,10 @@ export function toMinutes(time: string) {
 export function calcHours(startTime: string, endTime: string, breakMinutes: number) {
   const start = parse(startTime, "HH:mm", new Date());
   const end = parse(endTime, "HH:mm", new Date());
-  let minutes = differenceInMinutes(end, start) - breakMinutes;
+  // If end is earlier than start (e.g. 17:00 -> 00:00), treat as crossing midnight.
+  let rawMinutes = differenceInMinutes(end, start);
+  if (rawMinutes < 0) rawMinutes += 24 * 60;
+  let minutes = rawMinutes - breakMinutes;
   if (minutes < 0) minutes = 0;
   return Number((minutes / 60).toFixed(2));
 }
