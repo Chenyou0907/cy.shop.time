@@ -23,7 +23,8 @@ export default function RegisterPage() {
     event.preventDefault();
     setError(null);
     setMessage(null);
-    const formData = new FormData(event.currentTarget);
+    const formEl = event.currentTarget; // capture before await to avoid React pooling issues
+    const formData = new FormData(formEl);
     const payload = {
       email: String(formData.get("email") ?? ""),
       password: String(formData.get("password") ?? ""),
@@ -46,7 +47,7 @@ export default function RegisterPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "註冊失敗");
       setMessage("註冊成功，請至 Email 收信並完成驗證。");
-      event.currentTarget.reset();
+      formEl.reset();
     } catch (err) {
       setError(err instanceof Error ? err.message : "註冊失敗，請稍後再試");
     } finally {
