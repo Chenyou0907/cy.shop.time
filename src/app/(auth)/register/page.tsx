@@ -56,55 +56,56 @@ export default function RegisterPage() {
   };
 
   return (
-    <main className="mx-auto max-w-md space-y-6 rounded-lg bg-white p-8 shadow-sm">
-      <h1 className="text-2xl font-semibold">註冊</h1>
-      <form className="space-y-4" onSubmit={handleSubmit}>
-        <label className="block space-y-1 text-sm">
-          <span>Email</span>
-          <input
-            name="email"
-            type="email"
-            className="w-full rounded border border-slate-300 px-3 py-2 focus:border-blue-500 focus:outline-none"
-            placeholder="you@example.com"
-            required
-          />
-        </label>
-        <label className="block space-y-1 text-sm">
-          <span>密碼</span>
-          <input
-            name="password"
-            type="password"
-            className="w-full rounded border border-slate-300 px-3 py-2 focus:border-blue-500 focus:outline-none"
-            placeholder="至少 6 碼"
-            minLength={6}
-            required
-          />
-        </label>
-        <label className="block space-y-1 text-sm">
-          <span>再次輸入密碼</span>
-          <input
-            name="confirm"
-            type="password"
-            className="w-full rounded border border-slate-300 px-3 py-2 focus:border-blue-500 focus:outline-none"
-            placeholder="請再次輸入"
-            minLength={6}
-            required
-          />
-        </label>
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        {message && <p className="text-sm text-green-700">{message}</p>}
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full rounded bg-blue-600 px-4 py-2 text-white shadow hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-        >
-          {loading ? "送出中..." : "建立帳號"}
-        </button>
-      </form>
-      <div className="text-sm text-slate-600">
-        <a className="text-blue-600" href="/login">
-          已有帳號？登入
-        </a>
+    <main className="mx-auto max-w-md">
+      <div className="mb-6 text-center">
+        <h1 className="app-title">註冊</h1>
+        <p className="app-subtitle mt-1">建立帳號後即可開始記錄工時，支援 XLSX 匯入與匯出</p>
+      </div>
+      <div className="app-card space-y-6">
+        <form className="space-y-4" onSubmit={handleSubmit}>
+          <label className="app-label">
+            <span>Email</span>
+            <input
+              name="email"
+              type="email"
+              className="app-input"
+              placeholder="you@example.com"
+              required
+            />
+          </label>
+          <label className="app-label">
+            <span>密碼</span>
+            <input
+              name="password"
+              type="password"
+              className="app-input"
+              placeholder="至少 6 碼"
+              minLength={6}
+              required
+            />
+          </label>
+          <label className="app-label">
+            <span>再次輸入密碼</span>
+            <input
+              name="confirm"
+              type="password"
+              className="app-input"
+              placeholder="請再次輸入"
+              minLength={6}
+              required
+            />
+          </label>
+          {error && <p className="app-alert-error">{error}</p>}
+          {message && <p className="app-alert-success">{message}</p>}
+          <button type="submit" disabled={loading} className="app-btn-primary w-full">
+            {loading ? "送出中..." : "建立帳號"}
+          </button>
+        </form>
+        <div className="text-center text-sm text-slate-600">
+          <a className="app-link" href="/login">
+            已有帳號？登入
+          </a>
+        </div>
       </div>
     </main>
   );

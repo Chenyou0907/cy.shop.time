@@ -72,6 +72,11 @@ export default function DashboardClient({ email }: Props) {
 
   const totalPay = useMemo(() => rows.reduce((sum, r) => sum + r.totalPay, 0), [rows]);
 
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    window.location.href = "/login";
+  };
+
   const handleAdd = () => {
     setError(null);
     if (!date || !startTime || !endTime) {
@@ -139,78 +144,90 @@ export default function DashboardClient({ email }: Props) {
   };
 
   return (
-    <main className="space-y-6 rounded-lg bg-white p-6 shadow-sm">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">工時與薪資計算</h1>
-          <p className="text-sm text-slate-600">帳號：{email}</p>
+    <main className="space-y-6">
+      <header className="app-surface px-4 py-4 sm:px-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">工時與薪資計算</h1>
+            <p className="mt-1 text-sm text-slate-600">
+              <span className="mr-2 inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                {email}
+              </span>
+              已登入
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <span className="whitespace-nowrap">基礎時薪</span>
+              <input
+                type="number"
+                value={settings.baseWage}
+                onChange={(e) => setSettings({ ...settings, baseWage: Number(e.target.value) })}
+                className="w-28 rounded-lg border border-slate-300 px-3 py-2 text-right shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+              />
+            </label>
+            <button onClick={() => handleExport()} className="app-btn bg-emerald-600 text-white hover:bg-emerald-700">
+              匯出 XLSX
+            </button>
+            <label className="app-btn cursor-pointer border border-slate-300 bg-white text-slate-800 hover:bg-slate-50">
+              匯入 XLSX
+              <input
+                type="file"
+                accept=".xlsx"
+                className="hidden"
+                onChange={(e) => handleImport(e.target.files?.[0])}
+              />
+            </label>
+            <button onClick={handleSignOut} className="app-btn-ghost">
+              登出
+            </button>
+          </div>
         </div>
-        <div className="flex gap-2 text-sm">
-          <label className="flex items-center gap-1">
-            <span>基礎時薪</span>
-            <input
-              type="number"
-              value={settings.baseWage}
-              onChange={(e) => setSettings({ ...settings, baseWage: Number(e.target.value) })}
-              className="w-24 rounded border border-slate-300 px-2 py-1 text-right"
-            />
-          </label>
-          <button
-            onClick={() => handleExport()}
-            className="rounded bg-emerald-600 px-3 py-1 text-white hover:bg-emerald-700"
-          >
-            匯出 XLSX
-          </button>
-          <label className="cursor-pointer rounded border border-slate-300 px-3 py-1 text-center hover:bg-slate-50">
-            匯入 XLSX
-            <input
-              type="file"
-              accept=".xlsx"
-              className="hidden"
-              onChange={(e) => handleImport(e.target.files?.[0])}
-            />
-          </label>
-        </div>
-      </div>
+      </header>
 
-      <section className="space-y-3 rounded border border-slate-200 p-4">
-        <h2 className="text-lg font-semibold">輸入</h2>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <label className="text-sm">日期
+      <section className="app-surface p-4 sm:p-6">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight">輸入</h2>
+            <p className="text-sm text-slate-600">新增一筆工時，系統會依加班規則自動計算</p>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <label className="app-label">日期
             <input
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+              className="app-input mt-1"
             />
           </label>
-          <label className="text-sm">上班時間
+          <label className="app-label">上班時間
             <input
               type="time"
               value={startTime}
               onChange={(e) => setStartTime(e.target.value)}
-              className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+              className="app-input mt-1"
             />
           </label>
-          <label className="text-sm">下班時間
+          <label className="app-label">下班時間
             <input
               type="time"
               value={endTime}
               onChange={(e) => setEndTime(e.target.value)}
-              className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+              className="app-input mt-1"
             />
           </label>
-          <label className="text-sm">休息時間 (分鐘)
+          <label className="app-label">休息時間 (分鐘)
             <input
               type="number"
               min={0}
               value={breakMinutes}
               onChange={(e) => setBreakMinutes(Number(e.target.value))}
-              className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+              className="app-input mt-1"
             />
           </label>
-          <label className="text-sm">假別
-            <div className="mt-1 flex gap-3">
+          <label className="app-label">假別
+            <div className="mt-2 flex flex-wrap gap-4">
               <label className="flex items-center gap-1">
                 <input
                   type="radio"
@@ -243,86 +260,86 @@ export default function DashboardClient({ email }: Props) {
               </label>
             </div>
           </label>
-          <label className="text-sm">備註
+          <label className="app-label">備註
             <input
               type="text"
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+              className="app-input mt-1"
               placeholder="選填"
             />
           </label>
         </div>
-        <div className="flex flex-wrap items-center gap-3 text-sm">
-          <span>加班規則 (可自行調整，會儲存到帳號設定)</span>
-          <label className="flex items-center gap-1">
+        <div className="mt-5 flex flex-wrap items-center gap-3 text-sm text-slate-700">
+          <span className="font-medium">加班規則</span>
+          <span className="text-slate-500">(可自行調整，並儲存到帳號設定)</span>
+          <label className="flex items-center gap-2">
             <span>8 小時後</span>
             <input
               type="number"
               value={settings.thresholdHours}
               onChange={(e) => setSettings({ ...settings, thresholdHours: Number(e.target.value) })}
-              className="w-16 rounded border border-slate-300 px-2 py-1 text-right"
+              className="w-20 rounded-lg border border-slate-300 px-3 py-2 text-right shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40"
             />
           </label>
-          <label className="flex items-center gap-1">
+          <label className="flex items-center gap-2">
             <span>前 2 小時倍率</span>
             <input
               type="number"
               step="0.01"
               value={settings.level1Rate}
               onChange={(e) => setSettings({ ...settings, level1Rate: Number(e.target.value) })}
-              className="w-20 rounded border border-slate-300 px-2 py-1 text-right"
+              className="w-24 rounded-lg border border-slate-300 px-3 py-2 text-right shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40"
             />
           </label>
-          <label className="flex items-center gap-1">
+          <label className="flex items-center gap-2">
             <span>再 2 小時倍率</span>
             <input
               type="number"
               step="0.01"
               value={settings.level2Rate}
               onChange={(e) => setSettings({ ...settings, level2Rate: Number(e.target.value) })}
-              className="w-20 rounded border border-slate-300 px-2 py-1 text-right"
+              className="w-24 rounded-lg border border-slate-300 px-3 py-2 text-right shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40"
             />
           </label>
-          <label className="flex items-center gap-1">
+          <label className="flex items-center gap-2">
             <span>超過 12 小時倍率</span>
             <input
               type="number"
               step="0.01"
               value={settings.level3Rate}
               onChange={(e) => setSettings({ ...settings, level3Rate: Number(e.target.value) })}
-              className="w-24 rounded border border-slate-300 px-2 py-1 text-right"
+              className="w-28 rounded-lg border border-slate-300 px-3 py-2 text-right shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40"
             />
           </label>
           <button
             type="button"
             onClick={saveSettingsToAccount}
-            className="rounded border border-slate-300 px-3 py-1 hover:bg-slate-50"
+            className="app-btn-ghost"
           >
             儲存設定
           </button>
           {saveMessage && <span className="text-slate-600">{saveMessage}</span>}
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleAdd}
-            className="rounded bg-blue-600 px-4 py-2 text-white shadow hover:bg-blue-700"
-          >
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <button onClick={handleAdd} className="app-btn-primary">
             新增一筆
           </button>
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="app-alert-error">{error}</p>}
         </div>
       </section>
 
-      <section className="space-y-3 rounded border border-slate-200 p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">清單</h2>
-          <p className="text-sm text-slate-700">總金額：{totalPay.toLocaleString()} 元</p>
+      <section className="app-surface p-4 sm:p-6">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="text-lg font-semibold tracking-tight">清單</h2>
+          <p className="text-sm text-slate-700">
+            總金額：<span className="font-semibold">{totalPay.toLocaleString()}</span> 元
+          </p>
         </div>
-        <div className="overflow-auto">
+        <div className="mt-3 overflow-auto rounded-lg border border-slate-200">
           <table className="min-w-full text-sm">
             <thead>
-              <tr className="bg-slate-100 text-left">
+              <tr className="sticky top-0 bg-slate-100 text-left">
                 <th className="px-3 py-2">日期</th>
                 <th className="px-3 py-2">上班</th>
                 <th className="px-3 py-2">下班</th>
@@ -338,7 +355,7 @@ export default function DashboardClient({ email }: Props) {
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.id} className="border-b">
+                <tr key={row.id} className="border-b last:border-b-0">
                   <td className="px-3 py-2">{row.date}</td>
                   <td className="px-3 py-2">{row.startTime}</td>
                   <td className="px-3 py-2">{row.endTime}</td>
@@ -354,7 +371,7 @@ export default function DashboardClient({ email }: Props) {
                   <td className="px-3 py-2">
                     <button
                       onClick={() => handleDelete(row.id)}
-                      className="text-red-600 hover:underline"
+                      className="text-red-700 hover:underline underline-offset-4"
                     >
                       刪除
                     </button>

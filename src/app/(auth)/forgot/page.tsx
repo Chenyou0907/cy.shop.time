@@ -43,33 +43,34 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <main className="mx-auto max-w-md space-y-6 rounded-lg bg-white p-8 shadow-sm">
-      <h1 className="text-2xl font-semibold">忘記密碼</h1>
-      <form className="space-y-4" onSubmit={handleSubmit}>
-        <label className="block space-y-1 text-sm">
-          <span>Email</span>
-          <input
-            name="email"
-            type="email"
-            className="w-full rounded border border-slate-300 px-3 py-2 focus:border-blue-500 focus:outline-none"
-            placeholder="you@example.com"
-            required
-          />
-        </label>
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        {message && <p className="text-sm text-green-700">{message}</p>}
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full rounded bg-blue-600 px-4 py-2 text-white shadow hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-        >
-          {loading ? "寄送中..." : "寄送重設連結"}
-        </button>
-      </form>
-      <div className="text-sm text-slate-600">
-        <a className="text-blue-600" href="/login">
-          返回登入
-        </a>
+    <main className="mx-auto max-w-md">
+      <div className="mb-6 text-center">
+        <h1 className="app-title">忘記密碼</h1>
+        <p className="app-subtitle mt-1">輸入註冊信箱，我們會寄出重設連結</p>
+      </div>
+      <div className="app-card space-y-6">
+        <form className="space-y-4" onSubmit={handleSubmit}>
+          <label className="app-label">
+            <span>Email</span>
+            <input
+              name="email"
+              type="email"
+              className="app-input"
+              placeholder="you@example.com"
+              required
+            />
+          </label>
+          {error && <p className="app-alert-error">{error}</p>}
+          {message && <p className="app-alert-success">{message}</p>}
+          <button type="submit" disabled={loading} className="app-btn-primary w-full">
+            {loading ? "寄送中..." : "寄送重設連結"}
+          </button>
+        </form>
+        <div className="text-center text-sm text-slate-600">
+          <a className="app-link" href="/login">
+            返回登入
+          </a>
+        </div>
       </div>
     </main>
   );

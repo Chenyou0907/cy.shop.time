@@ -20,3 +20,57 @@ a {
 input, button, select, textarea {
   font: inherit;
 }
+
+@layer components {
+  .app-surface {
+    @apply rounded-2xl border border-slate-200 bg-white shadow-sm;
+  }
+
+  .app-card {
+    @apply app-surface p-6 sm:p-8;
+  }
+
+  .app-title {
+    @apply text-2xl font-semibold tracking-tight;
+  }
+
+  .app-subtitle {
+    @apply text-sm text-slate-600;
+  }
+
+  .app-label {
+    @apply block space-y-1 text-sm text-slate-700;
+  }
+
+  .app-input {
+    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 shadow-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40;
+  }
+
+  .app-btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium shadow-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .app-btn-primary {
+    @apply app-btn bg-blue-600 text-white hover:bg-blue-700;
+  }
+
+  .app-btn-ghost {
+    @apply app-btn border border-slate-300 bg-white text-slate-800 hover:bg-slate-50;
+  }
+
+  .app-link {
+    @apply text-blue-700 hover:text-blue-800 hover:underline underline-offset-4;
+  }
+
+  .app-alert {
+    @apply rounded-lg border px-3 py-2 text-sm;
+  }
+
+  .app-alert-error {
+    @apply app-alert border-red-200 bg-red-50 text-red-700;
+  }
+
+  .app-alert-success {
+    @apply app-alert border-emerald-200 bg-emerald-50 text-emerald-700;
+  }
+}
