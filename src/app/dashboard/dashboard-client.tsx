@@ -19,8 +19,14 @@ interface OvertimeSettings {
   baseWage: number;
 }
 
+interface PaySettings {
+  cyclesPerMonth: number; // 1~4
+  paydays: number[]; // 每次發薪日期 (1~31)
+}
+
 const SETTINGS_KEY_PREFIX = "overtime-settings-";
 const ROWS_KEY_PREFIX = "timesheet-rows-";
+const PAY_SETTINGS_KEY_PREFIX = "pay-settings-";
 
 export default function DashboardClient({ email }: Props) {
   const [date, setDate] = useState("");
@@ -39,6 +45,12 @@ export default function DashboardClient({ email }: Props) {
     baseWage: 190
   });
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [view, setView] = useState<"timesheet" | "payroll">("timesheet");
+  const [paySettings, setPaySettings] = useState<PaySettings>({
+    cyclesPerMonth: 1,
+    paydays: [5]
+  });
+  const [selectedMonth, setSelectedMonth] = useState<string>("");
   const supabase = useMemo(() => createSupabaseClient(), []);
 
   useEffect(() => {
@@ -69,6 +81,25 @@ export default function DashboardClient({ email }: Props) {
   }, [email]);
 
   useEffect(() => {
+    if (!email) return;
+    const key = PAY_SETTINGS_KEY_PREFIX + email;
+    const cached = localStorage.getItem(key);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached) as PaySettings;
+        if (parsed && typeof parsed.cyclesPerMonth === "number" && Array.isArray(parsed.paydays)) {
+          setPaySettings({
+            cyclesPerMonth: Math.min(Math.max(parsed.cyclesPerMonth, 1), 4),
+            paydays: parsed.paydays
+          });
+        }
+      } catch (e) {
+        console.error("讀取發薪設定失敗", e);
+      }
+    }
+  }, [email]);
+
+  useEffect(() => {
     const fetchProfile = async () => {
       const { data } = await supabase.auth.getUser();
       const meta = data.user?.user_metadata?.overtimeSettings as Partial<OvertimeSettings> | undefined;
@@ -91,7 +122,32 @@ export default function DashboardClient({ email }: Props) {
     localStorage.setItem(key, JSON.stringify(rows));
   }, [email, rows]);
 
+  useEffect(() => {
+    if (!email) return;
+    const key = PAY_SETTINGS_KEY_PREFIX + email;
+    localStorage.setItem(key, JSON.stringify(paySettings));
+  }, [email, paySettings]);
+
+  const monthTotals = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const r of rows) {
+      if (!r.date) continue;
+      const month = r.date.slice(0, 7); // YYYY-MM
+      map[month] = (map[month] ?? 0) + r.totalPay;
+    }
+    return map;
+  }, [rows]);
+
+  useEffect(() => {
+    if (selectedMonth) return;
+    const keys = Object.keys(monthTotals).sort();
+    if (keys.length > 0) {
+      setSelectedMonth(keys[keys.length - 1]);
+    }
+  }, [monthTotals, selectedMonth]);
+
   const totalPay = useMemo(() => rows.reduce((sum, r) => sum + r.totalPay, 0), [rows]);
+  const selectedMonthTotal = selectedMonth ? monthTotals[selectedMonth] ?? 0 : 0;
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -104,6 +160,34 @@ export default function DashboardClient({ email }: Props) {
   const startMinute = startTime.split(":")[1] ?? "";
   const endHour = endTime.split(":")[0] ?? "";
   const endMinute = endTime.split(":")[1] ?? "";
+
+  const payCyclesForMonth = useMemo(() => {
+    if (!selectedMonth) return [];
+    const [yearStr, monthStr] = selectedMonth.split("-");
+    const year = Number(yearStr);
+    const month = Number(monthStr); // 1-12
+    if (!year || !month) return [];
+    const lastDayOfMonth = new Date(year, month, 0).getDate();
+    const days = paySettings.paydays
+      .slice(0, paySettings.cyclesPerMonth)
+      .map((d) => Math.min(Math.max(Math.round(d || 1), 1), lastDayOfMonth))
+      .sort((a, b) => a - b);
+    const ranges: { index: number; startDay: number; endDay: number }[] = [];
+    for (let i = 0; i < days.length; i++) {
+      const startDay = i === 0 ? 1 : days[i - 1] + 1;
+      const endDay = days[i];
+      ranges.push({ index: i, startDay, endDay });
+    }
+    if (ranges.length === 0) {
+      ranges.push({ index: 0, startDay: 1, endDay: lastDayOfMonth });
+    } else {
+      const last = ranges[ranges.length - 1];
+      if (last.endDay < lastDayOfMonth) {
+        ranges[ranges.length - 1] = { ...last, endDay: lastDayOfMonth };
+      }
+    }
+    return ranges;
+  }, [paySettings, selectedMonth]);
 
   const handleAdd = () => {
     setError(null);
@@ -215,8 +299,26 @@ export default function DashboardClient({ email }: Props) {
             </button>
           </div>
         </div>
+        <div className="mt-4 flex gap-2 text-sm">
+          <button
+            type="button"
+            onClick={() => setView("timesheet")}
+            className={`app-btn px-3 py-1.5 ${view === "timesheet" ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
+          >
+            工時輸入
+          </button>
+          <button
+            type="button"
+            onClick={() => setView("payroll")}
+            className={`app-btn px-3 py-1.5 ${view === "payroll" ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
+          >
+            薪資設定 / 每月總額
+          </button>
+        </div>
       </header>
 
+      {view === "timesheet" && (
+        <>
       <section className="app-surface p-4 sm:p-6">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -461,6 +563,114 @@ export default function DashboardClient({ email }: Props) {
           </table>
         </div>
       </section>
+        </>
+      )}
+
+      {view === "payroll" && (
+        <section className="app-surface space-y-6 p-4 sm:p-6">
+          <div className="space-y-1">
+            <h2 className="text-lg font-semibold tracking-tight">薪資設定與每月總薪資</h2>
+            <p className="text-sm text-slate-600">
+              設定每月發薪次數與日期，並查看各月份的薪資總額。
+            </p>
+          </div>
+
+          <div className="space-y-4 rounded-lg border border-slate-200 p-4">
+            <h3 className="text-sm font-semibold text-slate-800">發薪設定</h3>
+            <div className="flex flex-wrap items-center gap-3 text-sm">
+              <label className="flex items-center gap-2">
+                <span>每月發薪次數</span>
+                <select
+                  className="app-input w-24"
+                  value={paySettings.cyclesPerMonth}
+                  onChange={(e) => {
+                    const cycles = Math.min(Math.max(Number(e.target.value) || 1, 1), 4);
+                    setPaySettings((prev) => ({
+                      cyclesPerMonth: cycles,
+                      paydays: prev.paydays.slice(0, cycles).concat(Array(Math.max(cycles - prev.paydays.length, 0)).fill(5))
+                    }));
+                  }}
+                >
+                  {[1, 2, 3, 4].map((n) => (
+                    <option key={n} value={n}>
+                      {n} 次 / 月
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 md:grid-cols-4 text-sm">
+              {Array.from({ length: paySettings.cyclesPerMonth }, (_, i) => {
+                const value = paySettings.paydays[i] ?? 5;
+                return (
+                  <label key={i} className="app-label">
+                    <span>第 {i + 1} 次發薪日期 (幾號)</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={31}
+                      className="app-input"
+                      value={value}
+                      onChange={(e) => {
+                        const day = Math.min(Math.max(Number(e.target.value) || 1, 1), 31);
+                        setPaySettings((prev) => {
+                          const next = [...prev.paydays];
+                          next[i] = day;
+                          return { ...prev, paydays: next };
+                        });
+                      }}
+                    />
+                  </label>
+                );
+              })}
+            </div>
+            <div className="mt-4 space-y-1 text-sm text-slate-700">
+              <p className="font-medium">以目前選擇月份 {selectedMonth || "（無資料）"} 計算區間：</p>
+              {!selectedMonth && <p className="text-slate-500">尚無工時資料，新增工時後會自動產生月份。</p>}
+              {selectedMonth &&
+                payCyclesForMonth.map((c) => (
+                  <p key={c.index}>
+                    第 {c.index + 1} 次：
+                    {selectedMonth.slice(5)}/{c.startDay.toString().padStart(2, "0")} ~{" "}
+                    {selectedMonth.slice(5)}/{c.endDay.toString().padStart(2, "0")}
+                  </p>
+                ))}
+            </div>
+          </div>
+
+          <div className="space-y-4 rounded-lg border border-slate-200 p-4">
+            <h3 className="text-sm font-semibold text-slate-800">每月總薪資</h3>
+            <div className="flex flex-wrap items-center gap-3 text-sm">
+              <label className="flex items-center gap-2">
+                <span>選擇月份</span>
+                <select
+                  className="app-input w-40"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                >
+                  {!selectedMonth && <option value="">請先新增工時</option>}
+                  {Object.keys(monthTotals)
+                    .sort()
+                    .map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            </div>
+            <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm">
+              <p className="text-slate-600">
+                選擇月份總薪資：
+                <span className="text-lg font-semibold text-slate-900">
+                  {selectedMonthTotal.toLocaleString()}
+                </span>{" "}
+                元
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
     </main>
   );
 }
