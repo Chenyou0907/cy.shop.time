@@ -84,74 +84,28 @@ export default function DashboardClient({ email }: Props) {
     }
   }, [email]);
 
-  // 同步發薪設定到 Supabase
-  const syncPaySettingsToSupabase = useCallback(async (settingsToSync: PaySettings) => {
-    try {
-      await supabase.auth.updateUser({
-        data: { paySettings: settingsToSync }
-      });
-    } catch (e) {
-      console.error("同步發薪設定到 Supabase 失敗", e);
-    }
-  }, [supabase]);
-
-  // 從 Supabase 和 localStorage 載入發薪設定
+  // 從 localStorage 載入發薪設定（不使用 Supabase user_metadata，避免標頭過大）
   useEffect(() => {
     if (!email) return;
-    const loadPaySettings = async () => {
+    const key = PAY_SETTINGS_KEY_PREFIX + email;
+    const cached = localStorage.getItem(key);
+    if (cached) {
       try {
-        // 先從 Supabase 讀取
-        const { data: userData } = await supabase.auth.getUser();
-        if (userData.user) {
-          const meta = userData.user.user_metadata?.paySettings as PaySettings | undefined;
-          if (meta && typeof meta.cyclesPerMonth === "number" && Array.isArray(meta.paydays)) {
-            setPaySettings({
-              cyclesPerMonth: Math.min(Math.max(meta.cyclesPerMonth, 1), 4),
-              paydays: meta.paydays
-            });
-            // 同步到 localStorage
-            const key = PAY_SETTINGS_KEY_PREFIX + email;
-            localStorage.setItem(key, JSON.stringify(meta));
-            return;
-          }
+        const parsed = JSON.parse(cached) as PaySettings;
+        if (parsed && typeof parsed.cyclesPerMonth === "number" && Array.isArray(parsed.paydays)) {
+          setPaySettings({
+            cyclesPerMonth: Math.min(Math.max(parsed.cyclesPerMonth, 1), 4),
+            paydays: parsed.paydays
+          });
         }
       } catch (e) {
-        console.error("從 Supabase 讀取發薪設定失敗", e);
+        console.error("讀取發薪設定失敗", e);
       }
-      
-      // 如果 Supabase 沒有資料，從 localStorage 讀取
-      const key = PAY_SETTINGS_KEY_PREFIX + email;
-      const cached = localStorage.getItem(key);
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached) as PaySettings;
-          if (parsed && typeof parsed.cyclesPerMonth === "number" && Array.isArray(parsed.paydays)) {
-            const settings = {
-              cyclesPerMonth: Math.min(Math.max(parsed.cyclesPerMonth, 1), 4),
-              paydays: parsed.paydays
-            };
-            setPaySettings(settings);
-            // 同步到 Supabase
-            syncPaySettingsToSupabase(settings);
-          }
-        } catch (e) {
-          console.error("讀取發薪設定失敗", e);
-        }
-      }
-    };
-    loadPaySettings();
-  }, [email, supabase, syncPaySettingsToSupabase]);
+    }
+  }, [email]);
 
-  useEffect(() => {
-    const fetchProfile = async () => {
-      const { data } = await supabase.auth.getUser();
-      const meta = data.user?.user_metadata?.overtimeSettings as Partial<OvertimeSettings> | undefined;
-      if (meta) {
-        setSettings((prev) => ({ ...prev, ...meta }));
-      }
-    };
-    fetchProfile();
-  }, [supabase]);
+  // 不再從 Supabase user_metadata 讀取設定，避免標頭過大
+  // 設定僅從 localStorage 讀取
 
   useEffect(() => {
     if (!email) return;
@@ -166,14 +120,12 @@ export default function DashboardClient({ email }: Props) {
     localStorage.setItem(key, JSON.stringify(rows));
   }, [email, rows]);
 
-  // 同步發薪設定到 localStorage 和 Supabase
+  // 同步發薪設定到 localStorage（不使用 Supabase user_metadata，避免標頭過大）
   useEffect(() => {
     if (!email) return;
     const key = PAY_SETTINGS_KEY_PREFIX + email;
     localStorage.setItem(key, JSON.stringify(paySettings));
-    // 同步到 Supabase
-    syncPaySettingsToSupabase(paySettings);
-  }, [email, paySettings, syncPaySettingsToSupabase]);
+  }, [email, paySettings]);
 
   const monthTotals = useMemo(() => {
     const map: Record<string, number> = {};
@@ -398,13 +350,40 @@ export default function DashboardClient({ email }: Props) {
 
   const saveSettingsToAccount = async () => {
     setSaveMessage(null);
-    const { error: updateError } = await supabase.auth.updateUser({ data: { overtimeSettings: settings } });
-    if (updateError) {
-      setSaveMessage(updateError.message);
-      return;
-    }
-    setSaveMessage("已儲存到帳號設定");
+    // 不再儲存到 Supabase user_metadata，避免標頭過大
+    // 設定已自動儲存到 localStorage
+    setSaveMessage("設定已儲存到本地（避免標頭過大，不再同步到雲端）");
   };
+
+  // 清理 Supabase user_metadata 中的大量資料，避免標頭過大
+  const clearUserMetadata = async () => {
+    try {
+      await supabase.auth.updateUser({
+        data: { 
+          timesheetRows: null,
+          paySettings: null
+        }
+      });
+      console.log("已清除 user_metadata 中的大量資料");
+    } catch (e) {
+      console.error("清除 user_metadata 失敗", e);
+    }
+  };
+
+  // 在載入時自動清理（僅執行一次）
+  useEffect(() => {
+    if (!email) return;
+    let cleaned = false;
+    const cleanup = async () => {
+      if (cleaned) return;
+      cleaned = true;
+      // 延遲執行，避免影響正常載入
+      setTimeout(() => {
+        clearUserMetadata();
+      }, 2000);
+    };
+    cleanup();
+  }, [email]);
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50 pb-4 sm:pb-8">
