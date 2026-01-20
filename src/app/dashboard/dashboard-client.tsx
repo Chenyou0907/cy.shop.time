@@ -54,6 +54,15 @@ export default function DashboardClient({ email }: Props) {
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
   const supabase = useMemo(() => createSupabaseClient(), []);
 
+  const getUserId = useCallback(async (): Promise<string | null> => {
+    const { data, error } = await supabase.auth.getUser();
+    if (error) {
+      console.error("取得使用者資訊失敗", error);
+      return null;
+    }
+    return data.user?.id ?? null;
+  }, [supabase]);
+
   useEffect(() => {
     if (!email) return;
     const key = SETTINGS_KEY_PREFIX + email;
@@ -67,42 +76,106 @@ export default function DashboardClient({ email }: Props) {
     }
   }, [email]);
 
-  // 從 localStorage 載入工時資料（不使用 Supabase user_metadata，避免標頭過大）
+  // 從 Supabase DB 載入工時資料（跨裝置同步），localStorage 作為離線備援
   useEffect(() => {
     if (!email) return;
-    const key = ROWS_KEY_PREFIX + email;
-    const cached = localStorage.getItem(key);
-    if (cached) {
-      try {
-        const parsed = JSON.parse(cached) as TimesheetRow[];
-        if (Array.isArray(parsed)) {
-          setRows(parsed);
-        }
-      } catch (e) {
-        console.error("讀取工時資料失敗", e);
-      }
-    }
-  }, [email]);
+    let cancelled = false;
+    const load = async () => {
+      const uid = await getUserId();
+      if (!uid) return;
 
-  // 從 localStorage 載入發薪設定（不使用 Supabase user_metadata，避免標頭過大）
+      const { data, error } = await supabase
+        .from("timesheet_rows")
+        .select("id, work_date, start_time, end_time, break_minutes, hours, wage, overtime_pay, total_pay, holiday, note")
+        .eq("user_id", uid)
+        .order("work_date", { ascending: true });
+
+      if (!cancelled && !error && data) {
+        const mapped: TimesheetRow[] = data.map((r: any) => ({
+          id: String(r.id),
+          date: String(r.work_date),
+          startTime: String(r.start_time),
+          endTime: String(r.end_time),
+          breakMinutes: Number(r.break_minutes ?? 0),
+          hours: Number(r.hours ?? 0),
+          wage: Number(r.wage ?? 0),
+          overtimePay: Number(r.overtime_pay ?? 0),
+          totalPay: Number(r.total_pay ?? 0),
+          holiday: (r.holiday as HolidayType) ?? "none",
+          note: r.note ?? ""
+        }));
+        setRows(mapped);
+        localStorage.setItem(ROWS_KEY_PREFIX + email, JSON.stringify(mapped));
+        return;
+      }
+
+      if (error) {
+        console.error("從 Supabase 讀取工時資料失敗", error);
+      }
+
+      // fallback to localStorage
+      const cached = localStorage.getItem(ROWS_KEY_PREFIX + email);
+      if (!cancelled && cached) {
+        try {
+          const parsed = JSON.parse(cached) as TimesheetRow[];
+          if (Array.isArray(parsed)) setRows(parsed);
+        } catch (e) {
+          console.error("讀取工時資料失敗", e);
+        }
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [email, getUserId, supabase]);
+
+  // 從 Supabase DB 載入發薪設定（跨裝置同步），localStorage 作為離線備援
   useEffect(() => {
     if (!email) return;
-    const key = PAY_SETTINGS_KEY_PREFIX + email;
-    const cached = localStorage.getItem(key);
-    if (cached) {
-      try {
-        const parsed = JSON.parse(cached) as PaySettings;
-        if (parsed && typeof parsed.cyclesPerMonth === "number" && Array.isArray(parsed.paydays)) {
-          setPaySettings({
-            cyclesPerMonth: Math.min(Math.max(parsed.cyclesPerMonth, 1), 4),
-            paydays: parsed.paydays
-          });
-        }
-      } catch (e) {
-        console.error("讀取發薪設定失敗", e);
+    let cancelled = false;
+    const load = async () => {
+      const uid = await getUserId();
+      if (!uid) return;
+
+      const { data, error } = await supabase
+        .from("pay_settings")
+        .select("cycles_per_month, paydays")
+        .eq("user_id", uid)
+        .maybeSingle();
+
+      if (!cancelled && !error && data) {
+        const next: PaySettings = {
+          cyclesPerMonth: Math.min(Math.max(Number(data.cycles_per_month ?? 2), 1), 4),
+          paydays: Array.isArray(data.paydays) ? data.paydays : (data.paydays ?? [20, 5])
+        };
+        setPaySettings(next);
+        localStorage.setItem(PAY_SETTINGS_KEY_PREFIX + email, JSON.stringify(next));
+        return;
       }
-    }
-  }, [email]);
+
+      if (error) console.error("從 Supabase 讀取發薪設定失敗", error);
+
+      const cached = localStorage.getItem(PAY_SETTINGS_KEY_PREFIX + email);
+      if (!cancelled && cached) {
+        try {
+          const parsed = JSON.parse(cached) as PaySettings;
+          if (parsed && typeof parsed.cyclesPerMonth === "number" && Array.isArray(parsed.paydays)) {
+            setPaySettings({
+              cyclesPerMonth: Math.min(Math.max(parsed.cyclesPerMonth, 1), 4),
+              paydays: parsed.paydays
+            });
+          }
+        } catch (e) {
+          console.error("讀取發薪設定失敗", e);
+        }
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [email, getUserId, supabase]);
 
   // 不再從 Supabase user_metadata 讀取設定，避免標頭過大
   // 設定僅從 localStorage 讀取
@@ -113,19 +186,30 @@ export default function DashboardClient({ email }: Props) {
     localStorage.setItem(key, JSON.stringify(settings));
   }, [email, settings]);
 
-  // 同步工時資料到 localStorage（不使用 Supabase user_metadata，避免標頭過大）
+  // 同步工時資料到 localStorage
   useEffect(() => {
     if (!email) return;
     const key = ROWS_KEY_PREFIX + email;
     localStorage.setItem(key, JSON.stringify(rows));
   }, [email, rows]);
 
-  // 同步發薪設定到 localStorage（不使用 Supabase user_metadata，避免標頭過大）
+  // 同步發薪設定到 localStorage + Supabase DB
   useEffect(() => {
     if (!email) return;
     const key = PAY_SETTINGS_KEY_PREFIX + email;
     localStorage.setItem(key, JSON.stringify(paySettings));
-  }, [email, paySettings]);
+    // fire-and-forget upsert
+    (async () => {
+      const uid = await getUserId();
+      if (!uid) return;
+      const { error } = await supabase.from("pay_settings").upsert({
+        user_id: uid,
+        cycles_per_month: paySettings.cyclesPerMonth,
+        paydays: paySettings.paydays
+      });
+      if (error) console.error("同步發薪設定到 Supabase 失敗", error);
+    })();
+  }, [email, getUserId, paySettings, supabase]);
 
   const monthTotals = useMemo(() => {
     const map: Record<string, number> = {};
@@ -276,8 +360,41 @@ export default function DashboardClient({ email }: Props) {
       }
     });
 
+    const persistRowToDb = async (row: TimesheetRow) => {
+      const uid = await getUserId();
+      if (!uid) return;
+      const { error } = await supabase.from("timesheet_rows").upsert({
+        id: row.id, // keep uuid stable
+        user_id: uid,
+        work_date: row.date,
+        start_time: row.startTime,
+        end_time: row.endTime,
+        break_minutes: row.breakMinutes,
+        hours: row.hours,
+        wage: row.wage,
+        overtime_pay: row.overtimePay,
+        total_pay: row.totalPay,
+        holiday: row.holiday,
+        note: row.note ?? ""
+      });
+      if (error) console.error("同步工時到 Supabase 失敗", error);
+    };
+
     if (editingRowId) {
       // 如果正在編輯現有記錄，則更新該記錄
+      const updated: TimesheetRow = {
+        id: editingRowId,
+        date,
+        startTime,
+        endTime,
+        breakMinutes,
+        hours,
+        wage: settings.baseWage,
+        overtimePay,
+        totalPay: pay,
+        holiday,
+        note
+      };
       setRows((prev) =>
         prev.map((row) =>
           row.id === editingRowId
@@ -297,6 +414,7 @@ export default function DashboardClient({ email }: Props) {
             : row
         )
       );
+      void persistRowToDb(updated);
     } else {
       // 新增記錄
       const newRow: TimesheetRow = {
@@ -313,6 +431,7 @@ export default function DashboardClient({ email }: Props) {
         note
       };
       setRows((prev) => [...prev, newRow]);
+      void persistRowToDb(newRow);
     }
     setNote("");
   };
@@ -322,6 +441,26 @@ export default function DashboardClient({ email }: Props) {
     try {
       const imported = await importXlsx(file);
       setRows(imported);
+      // 匯入後同步到 Supabase（批次 upsert）
+      const uid = await getUserId();
+      if (uid) {
+        const payload = imported.map((row) => ({
+          id: row.id,
+          user_id: uid,
+          work_date: row.date,
+          start_time: row.startTime,
+          end_time: row.endTime,
+          break_minutes: row.breakMinutes,
+          hours: row.hours,
+          wage: row.wage,
+          overtime_pay: row.overtimePay,
+          total_pay: row.totalPay,
+          holiday: row.holiday,
+          note: row.note ?? ""
+        }));
+        const { error } = await supabase.from("timesheet_rows").upsert(payload);
+        if (error) console.error("匯入同步到 Supabase 失敗", error);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "匯入失敗");
     }
@@ -337,6 +476,13 @@ export default function DashboardClient({ email }: Props) {
 
   const handleDelete = (id: string) => {
     setRows((prev) => prev.filter((r) => r.id !== id));
+    // 同步刪除到 Supabase
+    void (async () => {
+      const uid = await getUserId();
+      if (!uid) return;
+      const { error } = await supabase.from("timesheet_rows").delete().eq("user_id", uid).eq("id", id);
+      if (error) console.error("刪除同步到 Supabase 失敗", error);
+    })();
     // 如果刪除的是正在編輯的記錄，清空表單
     if (editingRowId === id) {
       setEditingRowId(null);
@@ -350,40 +496,9 @@ export default function DashboardClient({ email }: Props) {
 
   const saveSettingsToAccount = async () => {
     setSaveMessage(null);
-    // 不再儲存到 Supabase user_metadata，避免標頭過大
-    // 設定已自動儲存到 localStorage
-    setSaveMessage("設定已儲存到本地（避免標頭過大，不再同步到雲端）");
+    // 加班規則目前只存本地（可選擇之後也存 DB）
+    setSaveMessage("設定已儲存到本地");
   };
-
-  // 清理 Supabase user_metadata 中的大量資料，避免標頭過大
-  const clearUserMetadata = async () => {
-    try {
-      await supabase.auth.updateUser({
-        data: { 
-          timesheetRows: null,
-          paySettings: null
-        }
-      });
-      console.log("已清除 user_metadata 中的大量資料");
-    } catch (e) {
-      console.error("清除 user_metadata 失敗", e);
-    }
-  };
-
-  // 在載入時自動清理（僅執行一次）
-  useEffect(() => {
-    if (!email) return;
-    let cleaned = false;
-    const cleanup = async () => {
-      if (cleaned) return;
-      cleaned = true;
-      // 延遲執行，避免影響正常載入
-      setTimeout(() => {
-        clearUserMetadata();
-      }, 2000);
-    };
-    cleanup();
-  }, [email]);
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50 pb-4 sm:pb-8">
