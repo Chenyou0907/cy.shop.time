@@ -468,7 +468,11 @@ export default function DashboardClient({ email }: Props) {
       // 匯入後同步到 Supabase（批次 upsert）
       const uid = await getUserId();
       if (uid) {
-        const payload = normalized.map((row) => ({
+        // Supabase / Postgres：同一批 upsert 不能包含重複的 (user_id, work_date)
+        // 若匯入檔同一天有多筆，這裡以「最後一筆為準」去重
+        const byDate = new Map<string, TimesheetRow>();
+        for (const row of normalized) byDate.set(row.date, row);
+        const payload = Array.from(byDate.values()).map((row) => ({
           user_id: uid,
           work_date: row.date,
           start_time: row.startTime,
