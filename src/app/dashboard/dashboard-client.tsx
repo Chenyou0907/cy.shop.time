@@ -80,9 +80,23 @@ export default function DashboardClient({ email }: Props) {
   useEffect(() => {
     if (!email) return;
     let cancelled = false;
+    const loadFromLocal = () => {
+      const cached = localStorage.getItem(ROWS_KEY_PREFIX + email);
+      if (!cancelled && cached) {
+        try {
+          const parsed = JSON.parse(cached) as TimesheetRow[];
+          if (Array.isArray(parsed)) setRows(parsed);
+        } catch (e) {
+          console.error("讀取工時資料失敗", e);
+        }
+      }
+    };
     const load = async () => {
       const uid = await getUserId();
-      if (!uid) return;
+      if (!uid) {
+        loadFromLocal();
+        return;
+      }
 
       const { data, error } = await supabase
         .from("timesheet_rows")
@@ -114,15 +128,7 @@ export default function DashboardClient({ email }: Props) {
       }
 
       // fallback to localStorage
-      const cached = localStorage.getItem(ROWS_KEY_PREFIX + email);
-      if (!cancelled && cached) {
-        try {
-          const parsed = JSON.parse(cached) as TimesheetRow[];
-          if (Array.isArray(parsed)) setRows(parsed);
-        } catch (e) {
-          console.error("讀取工時資料失敗", e);
-        }
-      }
+      loadFromLocal();
     };
     load();
     return () => {
@@ -134,9 +140,28 @@ export default function DashboardClient({ email }: Props) {
   useEffect(() => {
     if (!email) return;
     let cancelled = false;
+    const loadFromLocal = () => {
+      const cached = localStorage.getItem(PAY_SETTINGS_KEY_PREFIX + email);
+      if (!cancelled && cached) {
+        try {
+          const parsed = JSON.parse(cached) as PaySettings;
+          if (parsed && typeof parsed.cyclesPerMonth === "number" && Array.isArray(parsed.paydays)) {
+            setPaySettings({
+              cyclesPerMonth: Math.min(Math.max(parsed.cyclesPerMonth, 1), 4),
+              paydays: parsed.paydays
+            });
+          }
+        } catch (e) {
+          console.error("讀取發薪設定失敗", e);
+        }
+      }
+    };
     const load = async () => {
       const uid = await getUserId();
-      if (!uid) return;
+      if (!uid) {
+        loadFromLocal();
+        return;
+      }
 
       const { data, error } = await supabase
         .from("pay_settings")
@@ -156,20 +181,7 @@ export default function DashboardClient({ email }: Props) {
 
       if (error) console.error("從 Supabase 讀取發薪設定失敗", error);
 
-      const cached = localStorage.getItem(PAY_SETTINGS_KEY_PREFIX + email);
-      if (!cancelled && cached) {
-        try {
-          const parsed = JSON.parse(cached) as PaySettings;
-          if (parsed && typeof parsed.cyclesPerMonth === "number" && Array.isArray(parsed.paydays)) {
-            setPaySettings({
-              cyclesPerMonth: Math.min(Math.max(parsed.cyclesPerMonth, 1), 4),
-              paydays: parsed.paydays
-            });
-          }
-        } catch (e) {
-          console.error("讀取發薪設定失敗", e);
-        }
-      }
+      loadFromLocal();
     };
     load();
     return () => {
