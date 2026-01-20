@@ -197,6 +197,36 @@ export default function DashboardClient({ email }: Props) {
     return ranges;
   }, [paySettings, selectedMonth]);
 
+  const payPerCycle = useMemo(() => {
+    if (!selectedMonth || payCyclesForMonth.length === 0) return [];
+    const [yearStr, monthStr] = selectedMonth.split("-");
+    const year = Number(yearStr);
+    const month = Number(monthStr);
+    if (!year || !month) return [];
+
+    return payCyclesForMonth.map((cycle) => {
+      // 計算該週期內所有工時記錄的總金額
+      const cycleTotal = rows.reduce((sum, row) => {
+        if (!row.date) return sum;
+        const rowDate = new Date(row.date);
+        const rowYear = rowDate.getFullYear();
+        const rowMonth = rowDate.getMonth() + 1; // getMonth() returns 0-11
+        const rowDay = rowDate.getDate();
+
+        // 檢查是否在選定的月份和週期範圍內
+        if (rowYear === year && rowMonth === month && rowDay >= cycle.startDay && rowDay <= cycle.endDay) {
+          return sum + row.totalPay;
+        }
+        return sum;
+      }, 0);
+
+      return {
+        ...cycle,
+        amount: cycleTotal
+      };
+    });
+  }, [payCyclesForMonth, rows, selectedMonth]);
+
   const handleAdd = () => {
     setError(null);
     if (!date || !startTime || !endTime) {
@@ -640,10 +670,13 @@ export default function DashboardClient({ email }: Props) {
               <p className="font-medium">以目前選擇月份 {selectedMonth || "（無資料）"} 計算區間：</p>
               {!selectedMonth && <p className="text-slate-500">尚無工時資料，新增工時後會自動產生月份。</p>}
               {selectedMonth &&
-                payCyclesForMonth.map((c) => (
+                payPerCycle.map((c) => (
                   <p key={c.index}>
                     第 {c.index + 1} 次：{selectedMonth.slice(5)}/{c.startDay.toString().padStart(2, "0")} ~{" "}
                     {selectedMonth.slice(5)}/{c.endDay.toString().padStart(2, "0")}，{c.payday}號發薪
+                    <span className="ml-2 font-semibold text-slate-900">
+                      （可領 {c.amount.toLocaleString()} 元）
+                    </span>
                   </p>
                 ))}
             </div>
