@@ -67,56 +67,22 @@ export default function DashboardClient({ email }: Props) {
     }
   }, [email]);
 
-  // 同步工時資料到 Supabase
-  const syncRowsToSupabase = useCallback(async (rowsToSync: TimesheetRow[]) => {
-    try {
-      await supabase.auth.updateUser({
-        data: { timesheetRows: rowsToSync }
-      });
-    } catch (e) {
-      console.error("同步工時資料到 Supabase 失敗", e);
-    }
-  }, [supabase]);
-
-  // 從 Supabase 和 localStorage 載入工時資料
+  // 從 localStorage 載入工時資料（不使用 Supabase user_metadata，避免標頭過大）
   useEffect(() => {
     if (!email) return;
-    const loadRows = async () => {
+    const key = ROWS_KEY_PREFIX + email;
+    const cached = localStorage.getItem(key);
+    if (cached) {
       try {
-        // 先從 Supabase 讀取
-        const { data: userData } = await supabase.auth.getUser();
-        if (userData.user) {
-          const meta = userData.user.user_metadata?.timesheetRows as TimesheetRow[] | undefined;
-          if (meta && Array.isArray(meta) && meta.length > 0) {
-            setRows(meta);
-            // 同步到 localStorage
-            const key = ROWS_KEY_PREFIX + email;
-            localStorage.setItem(key, JSON.stringify(meta));
-            return;
-          }
+        const parsed = JSON.parse(cached) as TimesheetRow[];
+        if (Array.isArray(parsed)) {
+          setRows(parsed);
         }
       } catch (e) {
-        console.error("從 Supabase 讀取工時資料失敗", e);
+        console.error("讀取工時資料失敗", e);
       }
-      
-      // 如果 Supabase 沒有資料，從 localStorage 讀取
-      const key = ROWS_KEY_PREFIX + email;
-      const cached = localStorage.getItem(key);
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached) as TimesheetRow[];
-          if (Array.isArray(parsed)) {
-            setRows(parsed);
-            // 同步到 Supabase
-            syncRowsToSupabase(parsed);
-          }
-        } catch (e) {
-          console.error("讀取工時資料失敗", e);
-        }
-      }
-    };
-    loadRows();
-  }, [email, supabase, syncRowsToSupabase]);
+    }
+  }, [email]);
 
   // 同步發薪設定到 Supabase
   const syncPaySettingsToSupabase = useCallback(async (settingsToSync: PaySettings) => {
@@ -193,14 +159,12 @@ export default function DashboardClient({ email }: Props) {
     localStorage.setItem(key, JSON.stringify(settings));
   }, [email, settings]);
 
-  // 同步工時資料到 localStorage 和 Supabase
+  // 同步工時資料到 localStorage（不使用 Supabase user_metadata，避免標頭過大）
   useEffect(() => {
     if (!email) return;
     const key = ROWS_KEY_PREFIX + email;
     localStorage.setItem(key, JSON.stringify(rows));
-    // 同步到 Supabase
-    syncRowsToSupabase(rows);
-  }, [email, rows, syncRowsToSupabase]);
+  }, [email, rows]);
 
   // 同步發薪設定到 localStorage 和 Supabase
   useEffect(() => {
