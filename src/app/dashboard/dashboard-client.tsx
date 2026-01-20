@@ -54,6 +54,9 @@ export default function DashboardClient({ email }: Props) {
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
   const supabase = useMemo(() => createSupabaseClient(), []);
 
+  const isUuid = (value: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+
   const getUserId = useCallback(async (): Promise<string | null> => {
     const { data, error } = await supabase.auth.getUser();
     if (error) {
@@ -85,7 +88,11 @@ export default function DashboardClient({ email }: Props) {
       if (!cancelled && cached) {
         try {
           const parsed = JSON.parse(cached) as TimesheetRow[];
-          if (Array.isArray(parsed)) setRows(parsed);
+          if (Array.isArray(parsed)) {
+            // 確保 id 是 UUID（避免後續寫入 DB 失敗）
+            const normalized = parsed.map((r) => ({ ...r, id: isUuid(r.id) ? r.id : uuid() }));
+            setRows(normalized);
+          }
         } catch (e) {
           console.error("讀取工時資料失敗", e);
         }
@@ -104,7 +111,7 @@ export default function DashboardClient({ email }: Props) {
         .eq("user_id", uid)
         .order("work_date", { ascending: true });
 
-      if (!cancelled && !error && data) {
+      if (!cancelled && !error && data && data.length > 0) {
         const mapped: TimesheetRow[] = data.map((r: any) => ({
           id: String(r.id),
           date: String(r.work_date),
@@ -127,7 +134,7 @@ export default function DashboardClient({ email }: Props) {
         console.error("從 Supabase 讀取工時資料失敗", error);
       }
 
-      // fallback to localStorage
+      // DB 沒資料（或錯誤）時 fallback to localStorage（避免把本機資料洗掉）
       loadFromLocal();
     };
     load();
@@ -375,8 +382,9 @@ export default function DashboardClient({ email }: Props) {
     const persistRowToDb = async (row: TimesheetRow) => {
       const uid = await getUserId();
       if (!uid) return;
-      const { error } = await supabase.from("timesheet_rows").upsert({
-        id: row.id, // keep uuid stable
+      // 用 (user_id, work_date) unique 做 upsert，避免 id 型別問題
+      const { error } = await supabase.from("timesheet_rows").upsert(
+        {
         user_id: uid,
         work_date: row.date,
         start_time: row.startTime,
@@ -388,7 +396,9 @@ export default function DashboardClient({ email }: Props) {
         total_pay: row.totalPay,
         holiday: row.holiday,
         note: row.note ?? ""
-      });
+        },
+        { onConflict: "user_id,work_date" }
+      );
       if (error) console.error("同步工時到 Supabase 失敗", error);
     };
 
@@ -452,12 +462,13 @@ export default function DashboardClient({ email }: Props) {
     if (!file) return;
     try {
       const imported = await importXlsx(file);
-      setRows(imported);
+      // 確保 id 是 UUID（xlsx 匯入的 id 可能不是 UUID）
+      const normalized = imported.map((r) => ({ ...r, id: isUuid(r.id) ? r.id : uuid() }));
+      setRows(normalized);
       // 匯入後同步到 Supabase（批次 upsert）
       const uid = await getUserId();
       if (uid) {
-        const payload = imported.map((row) => ({
-          id: row.id,
+        const payload = normalized.map((row) => ({
           user_id: uid,
           work_date: row.date,
           start_time: row.startTime,
@@ -470,7 +481,7 @@ export default function DashboardClient({ email }: Props) {
           holiday: row.holiday,
           note: row.note ?? ""
         }));
-        const { error } = await supabase.from("timesheet_rows").upsert(payload);
+        const { error } = await supabase.from("timesheet_rows").upsert(payload, { onConflict: "user_id,work_date" });
         if (error) console.error("匯入同步到 Supabase 失敗", error);
       }
     } catch (e) {
@@ -487,12 +498,15 @@ export default function DashboardClient({ email }: Props) {
   };
 
   const handleDelete = (id: string) => {
+    const target = rows.find((r) => r.id === id);
     setRows((prev) => prev.filter((r) => r.id !== id));
     // 同步刪除到 Supabase
     void (async () => {
       const uid = await getUserId();
       if (!uid) return;
-      const { error } = await supabase.from("timesheet_rows").delete().eq("user_id", uid).eq("id", id);
+      // 優先用日期刪（避免 id 不一致）
+      const q = supabase.from("timesheet_rows").delete().eq("user_id", uid);
+      const { error } = target ? await q.eq("work_date", target.date) : await q.eq("id", id);
       if (error) console.error("刪除同步到 Supabase 失敗", error);
     })();
     // 如果刪除的是正在編輯的記錄，清空表單
