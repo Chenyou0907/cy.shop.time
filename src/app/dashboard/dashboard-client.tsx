@@ -235,7 +235,7 @@ export default function DashboardClient({ email }: Props) {
     for (const r of rows) {
       if (!r.date) continue;
       const month = r.date.slice(0, 7); // YYYY-MM
-      map[month] = (map[month] ?? 0) + r.totalPay;
+      map[month] = Math.round((map[month] ?? 0) + r.totalPay);
     }
     return map;
   }, [rows]);
@@ -275,7 +275,7 @@ export default function DashboardClient({ email }: Props) {
     }
   }, [date, rows]);
 
-  const totalPay = useMemo(() => rows.reduce((sum, r) => sum + r.totalPay, 0), [rows]);
+  const totalPay = useMemo(() => Math.round(rows.reduce((sum, r) => sum + r.totalPay, 0)), [rows]);
   const selectedMonthTotal = selectedMonth ? monthTotals[selectedMonth] ?? 0 : 0;
 
   const handleSignOut = async () => {
@@ -335,7 +335,7 @@ export default function DashboardClient({ email }: Props) {
 
     return payCyclesForMonth.map((cycle) => {
       // 計算該週期內所有工時記錄的總金額
-      const cycleTotal = rows.reduce((sum, row) => {
+      const cycleTotal = Math.round(rows.reduce((sum, row) => {
         if (!row.date) return sum;
         const rowDate = new Date(row.date);
         const rowYear = rowDate.getFullYear();
@@ -347,7 +347,7 @@ export default function DashboardClient({ email }: Props) {
           return sum + row.totalPay;
         }
         return sum;
-      }, 0);
+      }, 0));
 
       return {
         ...cycle,
@@ -869,7 +869,7 @@ export default function DashboardClient({ email }: Props) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <span className="text-xs sm:text-sm font-medium text-slate-600 whitespace-nowrap">總金額：</span>
-            <span className="text-lg sm:text-xl font-bold text-emerald-700">{totalPay.toLocaleString()}</span>
+            <span className="text-lg sm:text-xl font-bold text-emerald-700">{totalPay.toLocaleString("zh-TW", { maximumFractionDigits: 0 })}</span>
             <span className="text-xs sm:text-sm font-medium text-slate-600 whitespace-nowrap">元</span>
           </div>
         </div>
@@ -1044,7 +1044,7 @@ export default function DashboardClient({ email }: Props) {
                         </div>
                       </div>
                       <span className="text-base sm:text-lg font-bold text-emerald-700 whitespace-nowrap">
-                        {c.amount.toLocaleString()} 元
+                        {Math.round(c.amount).toLocaleString("zh-TW", { maximumFractionDigits: 0 })} 元
                       </span>
                     </div>
                   ))}
@@ -1090,7 +1090,7 @@ export default function DashboardClient({ email }: Props) {
                   <div className="min-w-0 flex-1">
                     <p className="text-xs sm:text-sm font-medium text-slate-600">選擇月份總薪資</p>
                     <p className="text-xl sm:text-2xl font-bold text-emerald-700 truncate">
-                      {selectedMonthTotal.toLocaleString()} <span className="text-sm sm:text-base font-normal text-slate-600">元</span>
+                      {Math.round(selectedMonthTotal).toLocaleString("zh-TW", { maximumFractionDigits: 0 })} <span className="text-sm sm:text-base font-normal text-slate-600">元</span>
                     </p>
                   </div>
                 </div>

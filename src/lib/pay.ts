@@ -34,27 +34,28 @@ export function calcPay(options: {
   let overtimeHours = Math.max(hours - overtimeRule.thresholdHours, 0);
 
   if (holiday !== "none") {
-    const pay = wage * hours * 2;
-    return { regularPay: wage * hours, overtimePay: pay - wage * hours, totalPay: pay };
+    const pay = Math.round(wage * hours * 2);
+    const regularPay = Math.round(wage * hours);
+    return { regularPay, overtimePay: pay - regularPay, totalPay: pay };
   }
 
-  const regularPay = wage * baseHours;
+  const regularPay = Math.round(wage * baseHours);
   let overtimePay = 0;
 
   if (overtimeHours > 0) {
     const level1 = Math.min(overtimeHours, 2);
-    overtimePay += level1 * wage * overtimeRule.level1Rate;
+    overtimePay += Math.round(level1 * wage * overtimeRule.level1Rate);
     overtimeHours -= level1;
   }
 
   if (overtimeHours > 0) {
     const level2 = Math.min(overtimeHours, 2);
-    overtimePay += level2 * wage * overtimeRule.level2Rate;
+    overtimePay += Math.round(level2 * wage * overtimeRule.level2Rate);
     overtimeHours -= level2;
   }
 
   if (overtimeHours > 0) {
-    overtimePay += overtimeHours * wage * overtimeRule.level3Rate;
+    overtimePay += Math.round(overtimeHours * wage * overtimeRule.level3Rate);
   }
 
   return { regularPay, overtimePay, totalPay: regularPay + overtimePay };
