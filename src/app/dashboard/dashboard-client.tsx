@@ -53,6 +53,20 @@ export default function DashboardClient({ email }: Props) {
   const [selectedMonth, setSelectedMonth] = useState<string>("");
   const [filterMonth, setFilterMonth] = useState<string>(""); // 用於工時清單的月份篩選
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
+  
+  // 進階篩選
+  const [filterHoliday, setFilterHoliday] = useState<HolidayType | "all">("all");
+  const [filterStartDate, setFilterStartDate] = useState<string>("");
+  const [filterEndDate, setFilterEndDate] = useState<string>("");
+  const [searchNote, setSearchNote] = useState<string>("");
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  
+  // 深色模式
+  const [darkMode, setDarkMode] = useState(false);
+  
+  // 統計與視圖
+  const [showStats, setShowStats] = useState(false);
+  
   const supabase = useMemo(() => createSupabaseClient(), []);
 
   const isUuid = (value: string) =>
@@ -276,15 +290,191 @@ export default function DashboardClient({ email }: Props) {
     }
   }, [date, rows]);
 
-  // 根據篩選月份過濾工時記錄
+  // 載入深色模式設定
+  useEffect(() => {
+    const saved = localStorage.getItem("darkMode");
+    if (saved) setDarkMode(saved === "true");
+  }, []);
+
+  // 儲存深色模式設定
+  useEffect(() => {
+    localStorage.setItem("darkMode", String(darkMode));
+    if (darkMode) {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  }, [darkMode]);
+
+  // 快捷鍵支援
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl/Cmd + S: 儲存/新增記錄
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        handleAdd();
+      }
+      // ESC: 取消編輯
+      if (e.key === "Escape") {
+        setEditingRowId(null);
+        setDate("");
+        setStartTime("");
+        setEndTime("");
+        setBreakMinutes(0);
+        setHoliday("none");
+        setNote("");
+      }
+      // Ctrl/Cmd + B: 備份資料
+      if ((e.ctrlKey || e.metaKey) && e.key === "b") {
+        e.preventDefault();
+        handleBackup();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [date, startTime, endTime, breakMinutes, holiday, note, editingRowId]);
+
+  // 進階篩選邏輯
   const filteredRows = useMemo(() => {
-    if (!filterMonth) return rows;
-    return rows.filter((r) => r.date.startsWith(filterMonth));
-  }, [rows, filterMonth]);
+    let result = rows;
+
+    // 月份篩選
+    if (filterMonth) {
+      result = result.filter((r) => r.date.startsWith(filterMonth));
+    }
+
+    // 假別篩選
+    if (filterHoliday !== "all") {
+      result = result.filter((r) => r.holiday === filterHoliday);
+    }
+
+    // 日期區間篩選
+    if (filterStartDate) {
+      result = result.filter((r) => r.date >= filterStartDate);
+    }
+    if (filterEndDate) {
+      result = result.filter((r) => r.date <= filterEndDate);
+    }
+
+    // 備註搜尋
+    if (searchNote) {
+      result = result.filter((r) => 
+        r.note?.toLowerCase().includes(searchNote.toLowerCase())
+      );
+    }
+
+    return result;
+  }, [rows, filterMonth, filterHoliday, filterStartDate, filterEndDate, searchNote]);
 
   const totalPay = useMemo(() => Math.round(rows.reduce((sum, r) => sum + r.totalPay, 0)), [rows]);
   const filteredTotalPay = useMemo(() => Math.round(filteredRows.reduce((sum, r) => sum + r.totalPay, 0)), [filteredRows]);
   const selectedMonthTotal = selectedMonth ? monthTotals[selectedMonth] ?? 0 : 0;
+
+  // 統計數據
+  const stats = useMemo(() => {
+    if (!rows.length) return null;
+    
+    const totalHours = rows.reduce((sum, r) => sum + r.hours, 0);
+    const avgHours = totalHours / rows.length;
+    const overtimeRows = rows.filter(r => r.hours > 8);
+    const holidayRows = rows.filter(r => r.holiday !== "none");
+    
+    // 按月份統計
+    const monthlyStats: Record<string, { hours: number; pay: number; days: number }> = {};
+    rows.forEach(r => {
+      const month = r.date.slice(0, 7);
+      if (!monthlyStats[month]) {
+        monthlyStats[month] = { hours: 0, pay: 0, days: 0 };
+      }
+      monthlyStats[month].hours += r.hours;
+      monthlyStats[month].pay += r.totalPay;
+      monthlyStats[month].days += 1;
+    });
+    
+    return {
+      totalDays: rows.length,
+      totalHours: Math.round(totalHours * 100) / 100,
+      avgHours: Math.round(avgHours * 100) / 100,
+      overtimeDays: overtimeRows.length,
+      holidayDays: holidayRows.length,
+      monthlyStats
+    };
+  }, [rows]);
+
+  // 資料驗證
+  const validateData = useCallback(() => {
+    const issues: string[] = [];
+    const dateMap = new Map<string, number>();
+    
+    rows.forEach((row, index) => {
+      // 檢查重複日期
+      const count = dateMap.get(row.date) || 0;
+      dateMap.set(row.date, count + 1);
+      
+      // 檢查異常工時
+      if (row.hours > 24) {
+        issues.push(`第 ${index + 1} 筆：${row.date} 工時超過 24 小時`);
+      }
+      if (row.hours < 0) {
+        issues.push(`第 ${index + 1} 筆：${row.date} 工時為負數`);
+      }
+      
+      // 檢查時間邏輯
+      if (row.startTime && row.endTime && row.startTime === row.endTime && row.hours > 0) {
+        issues.push(`第 ${index + 1} 筆：${row.date} 上下班時間相同但工時不為 0`);
+      }
+    });
+    
+    // 檢查重複日期
+    dateMap.forEach((count, date) => {
+      if (count > 1) {
+        issues.push(`日期 ${date} 有 ${count} 筆重複記錄`);
+      }
+    });
+    
+    return issues;
+  }, [rows]);
+
+  // 備份功能
+  const handleBackup = useCallback(() => {
+    const backup = {
+      version: "1.0",
+      timestamp: new Date().toISOString(),
+      email,
+      rows,
+      settings,
+      paySettings
+    };
+    
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `工時備份_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [email, rows, settings, paySettings]);
+
+  // 還原功能
+  const handleRestore = useCallback(async (file: File) => {
+    try {
+      const text = await file.text();
+      const backup = JSON.parse(text);
+      
+      if (!backup.version || !backup.rows) {
+        throw new Error("備份檔案格式不正確");
+      }
+      
+      if (confirm(`確定要還原備份嗎？\n備份時間：${new Date(backup.timestamp).toLocaleString()}\n記錄數：${backup.rows.length} 筆\n\n目前資料將被覆蓋！`)) {
+        setRows(backup.rows);
+        if (backup.settings) setSettings(backup.settings);
+        if (backup.paySettings) setPaySettings(backup.paySettings);
+        alert("還原成功！");
+      }
+    } catch (e) {
+      alert("還原失敗：" + (e instanceof Error ? e.message : "未知錯誤"));
+    }
+  }, []);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -539,35 +729,70 @@ export default function DashboardClient({ email }: Props) {
   };
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50 pb-4 sm:pb-8">
+    <main className={`min-h-screen pb-4 sm:pb-8 ${darkMode ? "dark bg-slate-900" : "bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50"}`}>
       <div className="mx-auto max-w-7xl space-y-4 sm:space-y-6 px-3 py-4 sm:px-4 sm:py-6 lg:px-8">
-      <header className="app-surface border-slate-200/80 bg-white/80 backdrop-blur-sm px-4 py-4 sm:px-6 sm:py-5 shadow-lg shadow-slate-200/50">
+      <header className={`app-surface border-slate-200/80 backdrop-blur-sm px-4 py-4 sm:px-6 sm:py-5 shadow-lg shadow-slate-200/50 ${darkMode ? "bg-slate-800/80 border-slate-700" : "bg-white/80"}`}>
         <div className="flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0 flex-1">
-            <h1 className="bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-xl sm:text-2xl font-bold tracking-tight text-transparent">
+            <h1 className={`bg-gradient-to-r bg-clip-text text-xl sm:text-2xl font-bold tracking-tight text-transparent ${darkMode ? "from-blue-400 to-cyan-400" : "from-slate-900 to-slate-700"}`}>
               工時與薪資計算
             </h1>
-            <p className="mt-2 flex flex-wrap items-center gap-2 text-xs sm:text-sm text-slate-600">
-              <span className="inline-flex items-center rounded-full bg-gradient-to-r from-blue-100 to-indigo-100 px-2.5 py-0.5 sm:px-3 sm:py-1 text-xs font-medium text-blue-700 shadow-sm truncate max-w-[200px] sm:max-w-none">
+            <p className={`mt-2 flex flex-wrap items-center gap-2 text-xs sm:text-sm ${darkMode ? "text-slate-400" : "text-slate-600"}`}>
+              <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 sm:px-3 sm:py-1 text-xs font-medium shadow-sm truncate max-w-[200px] sm:max-w-none ${darkMode ? "bg-blue-900/50 text-blue-300" : "bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-700"}`}>
                 {email}
               </span>
-              <span className="text-slate-500 whitespace-nowrap">已登入</span>
+              <span className={`whitespace-nowrap ${darkMode ? "text-slate-500" : "text-slate-500"}`}>已登入</span>
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            <label className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-medium text-slate-700">
+            <button
+              onClick={() => setDarkMode(!darkMode)}
+              className={`app-btn transition-all text-xs sm:text-sm px-3 sm:px-4 ${darkMode ? "bg-slate-700 text-yellow-400 hover:bg-slate-600" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+              title="切換深色模式"
+            >
+              {darkMode ? (
+                <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" />
+                </svg>
+              ) : (
+                <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+                </svg>
+              )}
+            </button>
+            <button
+              onClick={handleBackup}
+              className={`app-btn transition-all text-xs sm:text-sm px-3 sm:px-4 ${darkMode ? "bg-purple-900/50 text-purple-300 hover:bg-purple-800/50" : "bg-purple-100 text-purple-700 hover:bg-purple-200"}`}
+              title="備份資料 (Ctrl+B)"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+              </svg>
+            </button>
+            <label className={`app-btn cursor-pointer transition-all text-xs sm:text-sm px-3 sm:px-4 ${darkMode ? "bg-purple-900/50 text-purple-300 hover:bg-purple-800/50" : "bg-purple-100 text-purple-700 hover:bg-purple-200"}`}>
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+              <input
+                type="file"
+                accept=".json"
+                className="hidden"
+                onChange={(e) => e.target.files?.[0] && handleRestore(e.target.files[0])}
+              />
+            </label>
+            <label className={`flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-medium ${darkMode ? "text-slate-300" : "text-slate-700"}`}>
               <span className="whitespace-nowrap hidden sm:inline">基礎時薪</span>
               <span className="whitespace-nowrap sm:hidden">時薪</span>
               <input
                 type="number"
                 value={settings.baseWage}
                 onChange={(e) => setSettings({ ...settings, baseWage: Number(e.target.value) })}
-                className="w-20 sm:w-32 rounded-lg border border-slate-300 bg-white px-2 sm:px-3 py-1.5 sm:py-2 text-right text-sm font-semibold shadow-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                className={`w-20 sm:w-32 rounded-lg border px-2 sm:px-3 py-1.5 sm:py-2 text-right text-sm font-semibold shadow-sm transition-all focus:outline-none focus:ring-2 ${darkMode ? "bg-slate-700 border-slate-600 text-slate-200 focus:border-blue-500 focus:ring-blue-500/30" : "bg-white border-slate-300 focus:border-blue-400 focus:ring-blue-500/30"}`}
               />
             </label>
             <button 
               onClick={() => handleExport()} 
-              className="app-btn bg-gradient-to-r from-emerald-600 to-emerald-700 text-white shadow-md shadow-emerald-200/50 transition-all hover:from-emerald-700 hover:to-emerald-800 hover:shadow-lg hover:shadow-emerald-300/50 text-xs sm:text-sm px-3 sm:px-4"
+              className={`app-btn shadow-md transition-all text-xs sm:text-sm px-3 sm:px-4 ${darkMode ? "bg-emerald-900/50 text-emerald-300 hover:bg-emerald-800/50" : "bg-gradient-to-r from-emerald-600 to-emerald-700 text-white hover:from-emerald-700 hover:to-emerald-800"}`}
             >
               <svg className="h-3.5 w-3.5 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -575,7 +800,7 @@ export default function DashboardClient({ email }: Props) {
               <span className="hidden sm:inline">匯出 XLSX</span>
               <span className="sm:hidden">匯出</span>
             </button>
-            <label className="app-btn cursor-pointer border border-slate-300 bg-white text-slate-800 shadow-sm transition-all hover:border-slate-400 hover:bg-slate-50 hover:shadow-md text-xs sm:text-sm px-3 sm:px-4">
+            <label className={`app-btn cursor-pointer shadow-sm transition-all text-xs sm:text-sm px-3 sm:px-4 ${darkMode ? "border-slate-600 bg-slate-700 text-slate-300 hover:bg-slate-600" : "border border-slate-300 bg-white text-slate-800 hover:border-slate-400 hover:bg-slate-50"}`}>
               <svg className="h-3.5 w-3.5 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
               </svg>
@@ -590,19 +815,23 @@ export default function DashboardClient({ email }: Props) {
             </label>
             <button 
               onClick={handleSignOut} 
-              className="app-btn-ghost transition-all hover:border-slate-400 hover:shadow-sm text-xs sm:text-sm px-3 sm:px-4"
+              className={`app-btn-ghost transition-all text-xs sm:text-sm px-3 sm:px-4 ${darkMode ? "border-slate-600 text-slate-400 hover:bg-slate-700" : "hover:border-slate-400"}`}
             >
               登出
             </button>
           </div>
         </div>
-        <div className="mt-4 sm:mt-5 flex gap-2 border-t border-slate-200 pt-3 sm:pt-4 overflow-x-auto">
+        <div className={`mt-4 sm:mt-5 flex gap-2 border-t pt-3 sm:pt-4 overflow-x-auto ${darkMode ? "border-slate-700" : "border-slate-200"}`}>
           <button
             type="button"
             onClick={() => setView("timesheet")}
             className={`app-btn px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 ${
               view === "timesheet"
-                ? "bg-gradient-to-r from-slate-900 to-slate-800 text-white shadow-md shadow-slate-300/50"
+                ? darkMode 
+                  ? "bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md"
+                  : "bg-gradient-to-r from-slate-900 to-slate-800 text-white shadow-md shadow-slate-300/50"
+                : darkMode
+                ? "border border-slate-600 bg-slate-700 text-slate-300 hover:bg-slate-600"
                 : "border border-slate-300 bg-white text-slate-700 shadow-sm hover:border-slate-400 hover:bg-slate-50 hover:shadow-md"
             }`}
           >
@@ -616,7 +845,11 @@ export default function DashboardClient({ email }: Props) {
             onClick={() => setView("payroll")}
             className={`app-btn px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 ${
               view === "payroll"
-                ? "bg-gradient-to-r from-slate-900 to-slate-800 text-white shadow-md shadow-slate-300/50"
+                ? darkMode 
+                  ? "bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md"
+                  : "bg-gradient-to-r from-slate-900 to-slate-800 text-white shadow-md shadow-slate-300/50"
+                : darkMode
+                ? "border border-slate-600 bg-slate-700 text-slate-300 hover:bg-slate-600"
                 : "border border-slate-300 bg-white text-slate-700 shadow-sm hover:border-slate-400 hover:bg-slate-50 hover:shadow-md"
             }`}
           >
@@ -626,19 +859,115 @@ export default function DashboardClient({ email }: Props) {
             <span className="ml-1 sm:ml-0 hidden sm:inline">薪資設定 / 每月總額</span>
             <span className="ml-1 sm:hidden">薪資</span>
           </button>
+          <button
+            type="button"
+            onClick={() => setShowStats(!showStats)}
+            className={`app-btn px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium transition-all whitespace-nowrap flex-shrink-0 ${
+              showStats
+                ? darkMode 
+                  ? "bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-md"
+                  : "bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-md"
+                : darkMode
+                ? "border border-slate-600 bg-slate-700 text-slate-300 hover:bg-slate-600"
+                : "border border-slate-300 bg-white text-slate-700 shadow-sm hover:border-slate-400 hover:bg-slate-50 hover:shadow-md"
+            }`}
+          >
+            <svg className="h-3.5 w-3.5 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            <span className="ml-1 sm:ml-0">統計</span>
+          </button>
+        </div>
+        
+        {/* 快捷鍵提示 */}
+        <div className={`mt-3 text-xs ${darkMode ? "text-slate-500" : "text-slate-500"}`}>
+          快捷鍵：Ctrl+S 儲存 | ESC 取消編輯 | Ctrl+B 備份
         </div>
       </header>
 
+      {/* 統計面板 */}
+      {showStats && stats && (
+        <section className={`app-surface backdrop-blur-sm p-4 shadow-lg sm:p-6 ${darkMode ? "bg-slate-800/80 border-slate-700" : "bg-white/80 border-slate-200/80"}`}>
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className={`text-lg sm:text-xl font-bold tracking-tight ${darkMode ? "text-slate-200" : "text-slate-900"}`}>工時統計</h2>
+            <button onClick={() => setShowStats(false)} className={`text-sm ${darkMode ? "text-slate-400 hover:text-slate-300" : "text-slate-600 hover:text-slate-900"}`}>
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          
+          <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
+            <div className={`rounded-lg p-4 ${darkMode ? "bg-slate-700/50" : "bg-gradient-to-br from-blue-50 to-indigo-50"}`}>
+              <p className={`text-xs font-medium ${darkMode ? "text-slate-400" : "text-slate-600"}`}>總工作天數</p>
+              <p className={`text-2xl font-bold mt-1 ${darkMode ? "text-blue-400" : "text-blue-700"}`}>{stats.totalDays}</p>
+            </div>
+            <div className={`rounded-lg p-4 ${darkMode ? "bg-slate-700/50" : "bg-gradient-to-br from-emerald-50 to-green-50"}`}>
+              <p className={`text-xs font-medium ${darkMode ? "text-slate-400" : "text-slate-600"}`}>總工時</p>
+              <p className={`text-2xl font-bold mt-1 ${darkMode ? "text-emerald-400" : "text-emerald-700"}`}>{stats.totalHours}h</p>
+            </div>
+            <div className={`rounded-lg p-4 ${darkMode ? "bg-slate-700/50" : "bg-gradient-to-br from-purple-50 to-pink-50"}`}>
+              <p className={`text-xs font-medium ${darkMode ? "text-slate-400" : "text-slate-600"}`}>平均工時</p>
+              <p className={`text-2xl font-bold mt-1 ${darkMode ? "text-purple-400" : "text-purple-700"}`}>{stats.avgHours}h</p>
+            </div>
+            <div className={`rounded-lg p-4 ${darkMode ? "bg-slate-700/50" : "bg-gradient-to-br from-orange-50 to-red-50"}`}>
+              <p className={`text-xs font-medium ${darkMode ? "text-slate-400" : "text-slate-600"}`}>加班天數</p>
+              <p className={`text-2xl font-bold mt-1 ${darkMode ? "text-orange-400" : "text-orange-700"}`}>{stats.overtimeDays}</p>
+            </div>
+            <div className={`rounded-lg p-4 ${darkMode ? "bg-slate-700/50" : "bg-gradient-to-br from-cyan-50 to-blue-50"}`}>
+              <p className={`text-xs font-medium ${darkMode ? "text-slate-400" : "text-slate-600"}`}>假日工作</p>
+              <p className={`text-2xl font-bold mt-1 ${darkMode ? "text-cyan-400" : "text-cyan-700"}`}>{stats.holidayDays}</p>
+            </div>
+          </div>
+          
+          <div className="mt-6">
+            <h3 className={`text-sm font-bold mb-3 ${darkMode ? "text-slate-300" : "text-slate-800"}`}>每月統計</h3>
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+              {Object.entries(stats.monthlyStats).sort().reverse().map(([month, data]) => (
+                <div key={month} className={`rounded-lg p-4 border ${darkMode ? "bg-slate-700/30 border-slate-600" : "bg-white border-slate-200"}`}>
+                  <p className={`text-sm font-bold ${darkMode ? "text-slate-200" : "text-slate-900"}`}>{month}</p>
+                  <div className="mt-2 space-y-1 text-xs">
+                    <p className={darkMode ? "text-slate-400" : "text-slate-600"}>工作天數：<span className="font-semibold">{data.days}</span></p>
+                    <p className={darkMode ? "text-slate-400" : "text-slate-600"}>總工時：<span className="font-semibold">{Math.round(data.hours * 100) / 100}h</span></p>
+                    <p className={darkMode ? "text-slate-400" : "text-slate-600"}>總薪資：<span className="font-semibold text-emerald-600">{Math.round(data.pay).toLocaleString()}元</span></p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          {/* 資料驗證 */}
+          <div className="mt-6">
+            <button
+              onClick={() => {
+                const issues = validateData();
+                if (issues.length === 0) {
+                  alert("✓ 資料驗證通過，沒有發現問題！");
+                } else {
+                  alert("發現以下問題：\n\n" + issues.join("\n"));
+                }
+              }}
+              className={`app-btn text-sm ${darkMode ? "bg-yellow-900/50 text-yellow-300 hover:bg-yellow-800/50" : "bg-yellow-100 text-yellow-800 hover:bg-yellow-200"}`}
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              驗證資料
+            </button>
+          </div>
+        </section>
+      )}
+
       {view === "timesheet" && (
         <>
-      <section className="app-surface border-slate-200/80 bg-white/80 backdrop-blur-sm p-4 shadow-lg shadow-slate-200/50 sm:p-6 sm:p-8">
+      <section className={`app-surface backdrop-blur-sm p-4 shadow-lg sm:p-6 sm:p-8 ${darkMode ? "bg-slate-800/80 border-slate-700" : "bg-white/80 border-slate-200/80"}`}>
         <div className="mb-4 sm:mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h2 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900">工時輸入</h2>
-            <p className="mt-1 text-xs sm:text-sm text-slate-600">新增一筆工時，系統會依加班規則自動計算</p>
+            <h2 className={`text-lg sm:text-xl font-bold tracking-tight ${darkMode ? "text-slate-200" : "text-slate-900"}`}>工時輸入</h2>
+            <p className={`mt-1 text-xs sm:text-sm ${darkMode ? "text-slate-400" : "text-slate-600"}`}>新增一筆工時，系統會依加班規則自動計算</p>
           </div>
           {editingRowId && (
-            <div className="inline-flex items-center gap-1.5 sm:gap-2 rounded-lg bg-blue-50 px-2.5 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm font-medium text-blue-700">
+            <div className={`inline-flex items-center gap-1.5 sm:gap-2 rounded-lg px-2.5 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm font-medium ${darkMode ? "bg-blue-900/50 text-blue-300" : "bg-blue-50 text-blue-700"}`}>
               <svg className="h-3.5 w-3.5 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
               </svg>
@@ -869,29 +1198,43 @@ export default function DashboardClient({ email }: Props) {
         </div>
       </section>
 
-      <section className="app-surface border-slate-200/80 bg-white/80 backdrop-blur-sm p-4 shadow-lg shadow-slate-200/50 sm:p-6 sm:p-8">
+      <section className={`app-surface backdrop-blur-sm p-4 shadow-lg sm:p-6 sm:p-8 ${darkMode ? "bg-slate-800/80 border-slate-700" : "bg-white/80 border-slate-200/80"}`}>
         <div className="mb-4 sm:mb-6 space-y-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900">工時清單</h2>
-            <div className="flex items-center gap-2 sm:gap-3 rounded-xl bg-gradient-to-r from-emerald-50 to-blue-50 px-3 sm:px-4 py-2 sm:py-2.5">
-              <svg className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <h2 className={`text-lg sm:text-xl font-bold tracking-tight ${darkMode ? "text-slate-200" : "text-slate-900"}`}>工時清單</h2>
+            <div className={`flex items-center gap-2 sm:gap-3 rounded-xl px-3 sm:px-4 py-2 sm:py-2.5 ${darkMode ? "bg-gradient-to-r from-emerald-900/50 to-blue-900/50" : "bg-gradient-to-r from-emerald-50 to-blue-50"}`}>
+              <svg className={`h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0 ${darkMode ? "text-emerald-400" : "text-emerald-600"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <span className="text-xs sm:text-sm font-medium text-slate-600 whitespace-nowrap">總金額：</span>
-              <span className="text-lg sm:text-xl font-bold text-emerald-700">{totalPay.toLocaleString("zh-TW", { maximumFractionDigits: 0 })}</span>
-              <span className="text-xs sm:text-sm font-medium text-slate-600 whitespace-nowrap">元</span>
+              <span className={`text-xs sm:text-sm font-medium whitespace-nowrap ${darkMode ? "text-slate-400" : "text-slate-600"}`}>總金額：</span>
+              <span className={`text-lg sm:text-xl font-bold ${darkMode ? "text-emerald-400" : "text-emerald-700"}`}>{totalPay.toLocaleString("zh-TW", { maximumFractionDigits: 0 })}</span>
+              <span className={`text-xs sm:text-sm font-medium whitespace-nowrap ${darkMode ? "text-slate-400" : "text-slate-600"}`}>元</span>
             </div>
           </div>
           
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 rounded-lg border border-slate-200 bg-gradient-to-r from-blue-50/50 to-slate-50 p-3 sm:p-4">
-            <div className="flex items-center gap-2 flex-1">
-              <svg className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-              </svg>
-              <label className="flex items-center gap-2 flex-1">
-                <span className="text-sm font-medium text-slate-700 whitespace-nowrap">篩選月份：</span>
+          {/* 進階篩選區 */}
+          <div className={`rounded-lg border p-3 sm:p-4 ${darkMode ? "bg-slate-700/30 border-slate-600" : "bg-gradient-to-r from-blue-50/50 to-slate-50 border-slate-200"}`}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <svg className={`h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0 ${darkMode ? "text-blue-400" : "text-blue-600"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                </svg>
+                <span className={`text-sm font-semibold ${darkMode ? "text-slate-200" : "text-slate-800"}`}>篩選條件</span>
+              </div>
+              <button
+                onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+                className={`text-xs ${darkMode ? "text-blue-400 hover:text-blue-300" : "text-blue-600 hover:text-blue-700"}`}
+              >
+                {showAdvancedFilters ? "收起" : "展開"}
+              </button>
+            </div>
+            
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+              {/* 月份篩選 */}
+              <label className="flex flex-col gap-1.5">
+                <span className={`text-xs font-medium ${darkMode ? "text-slate-400" : "text-slate-700"}`}>月份</span>
                 <select
-                  className="app-input text-sm flex-1 min-w-[140px]"
+                  className={`app-input text-sm ${darkMode ? "bg-slate-700 border-slate-600 text-slate-200" : ""}`}
                   value={filterMonth}
                   onChange={(e) => setFilterMonth(e.target.value)}
                 >
@@ -906,15 +1249,87 @@ export default function DashboardClient({ email }: Props) {
                     ))}
                 </select>
               </label>
+              
+              {/* 假別篩選 */}
+              <label className="flex flex-col gap-1.5">
+                <span className={`text-xs font-medium ${darkMode ? "text-slate-400" : "text-slate-700"}`}>假別</span>
+                <select
+                  className={`app-input text-sm ${darkMode ? "bg-slate-700 border-slate-600 text-slate-200" : ""}`}
+                  value={filterHoliday}
+                  onChange={(e) => setFilterHoliday(e.target.value as HolidayType | "all")}
+                >
+                  <option value="all">全部</option>
+                  <option value="none">一般日</option>
+                  <option value="typhoon">颱風假</option>
+                  <option value="national">國定假日</option>
+                </select>
+              </label>
+              
+              {/* 備註搜尋 */}
+              <label className="flex flex-col gap-1.5">
+                <span className={`text-xs font-medium ${darkMode ? "text-slate-400" : "text-slate-700"}`}>搜尋備註</span>
+                <input
+                  type="text"
+                  placeholder="輸入關鍵字..."
+                  className={`app-input text-sm ${darkMode ? "bg-slate-700 border-slate-600 text-slate-200 placeholder-slate-500" : ""}`}
+                  value={searchNote}
+                  onChange={(e) => setSearchNote(e.target.value)}
+                />
+              </label>
+              
+              {/* 清除篩選 */}
+              <div className="flex items-end">
+                <button
+                  onClick={() => {
+                    setFilterMonth("");
+                    setFilterHoliday("all");
+                    setFilterStartDate("");
+                    setFilterEndDate("");
+                    setSearchNote("");
+                  }}
+                  className={`app-btn text-xs w-full ${darkMode ? "bg-slate-600 text-slate-300 hover:bg-slate-500" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  清除篩選
+                </button>
+              </div>
             </div>
-            {filterMonth && (
-              <div className="flex items-center gap-2 rounded-lg bg-white px-3 py-1.5 border border-blue-200">
-                <span className="text-xs sm:text-sm text-slate-600">篩選結果：</span>
-                <span className="text-sm sm:text-base font-bold text-blue-700">{filteredRows.length}</span>
-                <span className="text-xs sm:text-sm text-slate-600">筆</span>
-                <span className="mx-1 text-slate-300">|</span>
-                <span className="text-sm sm:text-base font-bold text-emerald-700">{filteredTotalPay.toLocaleString("zh-TW", { maximumFractionDigits: 0 })}</span>
-                <span className="text-xs sm:text-sm text-slate-600">元</span>
+            
+            {/* 日期區間篩選 */}
+            {showAdvancedFilters && (
+              <div className="mt-3 grid gap-3 grid-cols-1 sm:grid-cols-2">
+                <label className="flex flex-col gap-1.5">
+                  <span className={`text-xs font-medium ${darkMode ? "text-slate-400" : "text-slate-700"}`}>開始日期</span>
+                  <input
+                    type="date"
+                    className={`app-input text-sm ${darkMode ? "bg-slate-700 border-slate-600 text-slate-200" : ""}`}
+                    value={filterStartDate}
+                    onChange={(e) => setFilterStartDate(e.target.value)}
+                  />
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className={`text-xs font-medium ${darkMode ? "text-slate-400" : "text-slate-700"}`}>結束日期</span>
+                  <input
+                    type="date"
+                    className={`app-input text-sm ${darkMode ? "bg-slate-700 border-slate-600 text-slate-200" : ""}`}
+                    value={filterEndDate}
+                    onChange={(e) => setFilterEndDate(e.target.value)}
+                  />
+                </label>
+              </div>
+            )}
+            
+            {/* 篩選結果 */}
+            {(filterMonth || filterHoliday !== "all" || filterStartDate || filterEndDate || searchNote) && (
+              <div className={`mt-3 flex items-center gap-2 rounded-lg px-3 py-2 border ${darkMode ? "bg-slate-800/50 border-blue-800" : "bg-white border-blue-200"}`}>
+                <span className={`text-xs sm:text-sm ${darkMode ? "text-slate-400" : "text-slate-600"}`}>篩選結果：</span>
+                <span className={`text-sm sm:text-base font-bold ${darkMode ? "text-blue-400" : "text-blue-700"}`}>{filteredRows.length}</span>
+                <span className={`text-xs sm:text-sm ${darkMode ? "text-slate-400" : "text-slate-600"}`}>筆</span>
+                <span className={`mx-1 ${darkMode ? "text-slate-600" : "text-slate-300"}`}>|</span>
+                <span className={`text-sm sm:text-base font-bold ${darkMode ? "text-emerald-400" : "text-emerald-700"}`}>{filteredTotalPay.toLocaleString("zh-TW", { maximumFractionDigits: 0 })}</span>
+                <span className={`text-xs sm:text-sm ${darkMode ? "text-slate-400" : "text-slate-600"}`}>元</span>
               </div>
             )}
           </div>
