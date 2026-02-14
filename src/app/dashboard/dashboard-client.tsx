@@ -51,6 +51,7 @@ export default function DashboardClient({ email }: Props) {
     paydays: [20, 5]
   });
   const [selectedMonth, setSelectedMonth] = useState<string>("");
+  const [filterMonth, setFilterMonth] = useState<string>(""); // 用於工時清單的月份篩選
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
   const supabase = useMemo(() => createSupabaseClient(), []);
 
@@ -275,7 +276,14 @@ export default function DashboardClient({ email }: Props) {
     }
   }, [date, rows]);
 
+  // 根據篩選月份過濾工時記錄
+  const filteredRows = useMemo(() => {
+    if (!filterMonth) return rows;
+    return rows.filter((r) => r.date.startsWith(filterMonth));
+  }, [rows, filterMonth]);
+
   const totalPay = useMemo(() => Math.round(rows.reduce((sum, r) => sum + r.totalPay, 0)), [rows]);
+  const filteredTotalPay = useMemo(() => Math.round(filteredRows.reduce((sum, r) => sum + r.totalPay, 0)), [filteredRows]);
   const selectedMonthTotal = selectedMonth ? monthTotals[selectedMonth] ?? 0 : 0;
 
   const handleSignOut = async () => {
@@ -862,15 +870,53 @@ export default function DashboardClient({ email }: Props) {
       </section>
 
       <section className="app-surface border-slate-200/80 bg-white/80 backdrop-blur-sm p-4 shadow-lg shadow-slate-200/50 sm:p-6 sm:p-8">
-        <div className="mb-4 sm:mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900">工時清單</h2>
-          <div className="flex items-center gap-2 sm:gap-3 rounded-xl bg-gradient-to-r from-emerald-50 to-blue-50 px-3 sm:px-4 py-2 sm:py-2.5">
-            <svg className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span className="text-xs sm:text-sm font-medium text-slate-600 whitespace-nowrap">總金額：</span>
-            <span className="text-lg sm:text-xl font-bold text-emerald-700">{totalPay.toLocaleString("zh-TW", { maximumFractionDigits: 0 })}</span>
-            <span className="text-xs sm:text-sm font-medium text-slate-600 whitespace-nowrap">元</span>
+        <div className="mb-4 sm:mb-6 space-y-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900">工時清單</h2>
+            <div className="flex items-center gap-2 sm:gap-3 rounded-xl bg-gradient-to-r from-emerald-50 to-blue-50 px-3 sm:px-4 py-2 sm:py-2.5">
+              <svg className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="text-xs sm:text-sm font-medium text-slate-600 whitespace-nowrap">總金額：</span>
+              <span className="text-lg sm:text-xl font-bold text-emerald-700">{totalPay.toLocaleString("zh-TW", { maximumFractionDigits: 0 })}</span>
+              <span className="text-xs sm:text-sm font-medium text-slate-600 whitespace-nowrap">元</span>
+            </div>
+          </div>
+          
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 rounded-lg border border-slate-200 bg-gradient-to-r from-blue-50/50 to-slate-50 p-3 sm:p-4">
+            <div className="flex items-center gap-2 flex-1">
+              <svg className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+              </svg>
+              <label className="flex items-center gap-2 flex-1">
+                <span className="text-sm font-medium text-slate-700 whitespace-nowrap">篩選月份：</span>
+                <select
+                  className="app-input text-sm flex-1 min-w-[140px]"
+                  value={filterMonth}
+                  onChange={(e) => setFilterMonth(e.target.value)}
+                >
+                  <option value="">全部月份</option>
+                  {Object.keys(monthTotals)
+                    .sort()
+                    .reverse()
+                    .map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            </div>
+            {filterMonth && (
+              <div className="flex items-center gap-2 rounded-lg bg-white px-3 py-1.5 border border-blue-200">
+                <span className="text-xs sm:text-sm text-slate-600">篩選結果：</span>
+                <span className="text-sm sm:text-base font-bold text-blue-700">{filteredRows.length}</span>
+                <span className="text-xs sm:text-sm text-slate-600">筆</span>
+                <span className="mx-1 text-slate-300">|</span>
+                <span className="text-sm sm:text-base font-bold text-emerald-700">{filteredTotalPay.toLocaleString("zh-TW", { maximumFractionDigits: 0 })}</span>
+                <span className="text-xs sm:text-sm text-slate-600">元</span>
+              </div>
+            )}
           </div>
         </div>
         <div className="overflow-hidden rounded-xl border border-slate-200 shadow-sm -mx-2 sm:mx-0">
@@ -892,7 +938,7 @@ export default function DashboardClient({ email }: Props) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {rows.map((row, index) => (
+                {filteredRows.map((row, index) => (
                   <tr 
                     key={row.id} 
                     className={`transition-colors hover:bg-blue-50/30 cursor-pointer ${index % 2 === 0 ? "bg-white" : "bg-slate-50/50"} ${editingRowId === row.id ? "ring-2 ring-blue-400 bg-blue-50/50" : ""}`}
@@ -944,14 +990,16 @@ export default function DashboardClient({ email }: Props) {
                     </td>
                   </tr>
                 ))}
-                {!rows.length && (
+                {!filteredRows.length && (
                   <tr>
                     <td colSpan={11} className="px-4 py-12 text-center">
                       <div className="flex flex-col items-center gap-3 text-slate-400">
                         <svg className="h-12 w-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
-                        <p className="text-sm font-medium">尚無資料，請輸入後新增或匯入 XLSX</p>
+                        <p className="text-sm font-medium">
+                          {filterMonth ? `${filterMonth} 月份無資料` : "尚無資料，請輸入後新增或匯入 XLSX"}
+                        </p>
                       </div>
                     </td>
                   </tr>
