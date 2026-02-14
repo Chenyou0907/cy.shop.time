@@ -18,7 +18,7 @@ echo ✓ 文件已添加
 echo.
 
 echo [2/3] 提交變更...
-git commit -m "新增功能：月份查詢"
+git commit -m "修復完整版"
 if %errorlevel% neq 0 (
     echo 注意：可能沒有新的變更需要提交
 )
