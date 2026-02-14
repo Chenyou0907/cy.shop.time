@@ -895,7 +895,18 @@ export default function DashboardClient({ email }: Props) {
                 {rows.map((row, index) => (
                   <tr 
                     key={row.id} 
-                    className={`transition-colors hover:bg-blue-50/30 ${index % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}
+                    className={`transition-colors hover:bg-blue-50/30 cursor-pointer ${index % 2 === 0 ? "bg-white" : "bg-slate-50/50"} ${editingRowId === row.id ? "ring-2 ring-blue-400 bg-blue-50/50" : ""}`}
+                    onClick={() => {
+                      setDate(row.date);
+                      setEditingRowId(row.id);
+                      setStartTime(row.startTime);
+                      setEndTime(row.endTime);
+                      setBreakMinutes(row.breakMinutes);
+                      setHoliday(row.holiday);
+                      setNote(row.note || "");
+                      // 滾動到表單頂部
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
                   >
                     <td className="px-2 sm:px-4 py-2 sm:py-3 font-medium text-slate-900 whitespace-nowrap">{row.date}</td>
                     <td className="px-2 sm:px-4 py-2 sm:py-3 text-slate-700 whitespace-nowrap">{row.startTime}</td>
@@ -919,7 +930,10 @@ export default function DashboardClient({ email }: Props) {
                     <td className="px-2 sm:px-4 py-2 sm:py-3 text-slate-600 hidden lg:table-cell max-w-[120px] truncate">{row.note || "-"}</td>
                     <td className="px-2 sm:px-4 py-2 sm:py-3 text-center">
                       <button
-                        onClick={() => handleDelete(row.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(row.id);
+                        }}
                         className="inline-flex items-center gap-0.5 sm:gap-1 rounded-lg px-1.5 sm:px-2.5 py-0.5 sm:py-1 text-xs font-medium text-red-600 transition-all hover:bg-red-50 hover:text-red-700 touch-manipulation"
                       >
                         <svg className="h-3.5 w-3.5 sm:h-4 sm:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
